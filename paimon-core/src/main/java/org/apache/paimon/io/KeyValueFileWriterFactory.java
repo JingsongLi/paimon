@@ -28,15 +28,15 @@ import org.apache.paimon.format.FormatWriterFactory;
 import org.apache.paimon.format.TableStatsExtractor;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
+import org.apache.paimon.statistics.FieldStatsCollector;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.FileStorePathFactory;
 import org.apache.paimon.utils.StatsCollectorFactories;
 
-import javax.annotation.Nullable;
-
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Optional;
+import java.util.function.Function;
 
 /** A factory to create {@link FileWriter}s for writing {@link KeyValue} files. */
 public class KeyValueFileWriterFactory {
@@ -45,15 +45,8 @@ public class KeyValueFileWriterFactory {
     private final long schemaId;
     private final RowType keyType;
     private final RowType valueType;
-    private final RowType recordType;
-    private final Map<String, FormatWriterFactory> writerFactoryMap;
-    @Nullable private final TableStatsExtractor tableStatsExtractor;
-    private final Map<String, DataFilePathFactory> pathFactoryMap;
+    private final WriteFormatContext formatContext;
     private final long suggestedFileSize;
-    private final Map<Integer, String> levelCompressions;
-    private final String fileCompression;
-    private final Map<Integer, String> levelFormats;
-    private final FileFormat fileFormat;
     private final CoreOptions options;
 
     private KeyValueFileWriterFactory(
@@ -61,29 +54,15 @@ public class KeyValueFileWriterFactory {
             long schemaId,
             RowType keyType,
             RowType valueType,
-            RowType recordType,
-            FileFormat fileFormat,
-            Map<String, FormatWriterFactory> writerFactoryMap,
-            @Nullable TableStatsExtractor tableStatsExtractor,
-            Map<String, DataFilePathFactory> pathFactoryMap,
+            WriteFormatContext formatContext,
             long suggestedFileSize,
-            Map<Integer, String> levelCompressions,
-            String fileCompression,
-            Map<Integer, String> levelFormats,
             CoreOptions options) {
         this.fileIO = fileIO;
         this.schemaId = schemaId;
         this.keyType = keyType;
         this.valueType = valueType;
-        this.recordType = recordType;
-        this.fileFormat = fileFormat;
-        this.writerFactoryMap = writerFactoryMap;
-        this.tableStatsExtractor = tableStatsExtractor;
-        this.pathFactoryMap = pathFactoryMap;
+        this.formatContext = formatContext;
         this.suggestedFileSize = suggestedFileSize;
-        this.levelCompressions = levelCompressions;
-        this.fileCompression = fileCompression;
-        this.levelFormats = levelFormats;
         this.options = options;
     }
 
@@ -96,78 +75,42 @@ public class KeyValueFileWriterFactory {
     }
 
     @VisibleForTesting
-    public DataFilePathFactory pathFactory(String format) {
-        return pathFactoryMap.get(format);
+    public DataFilePathFactory pathFactory(int level) {
+        return formatContext.pathFactory(level);
     }
 
     public RollingFileWriter<KeyValue, DataFileMeta> createRollingMergeTreeFileWriter(int level) {
-        String fileFormat = getFileFormat(level);
         return new RollingFileWriter<>(
-                () ->
-                        createDataFileWriter(
-                                pathFactoryMap.get(fileFormat).newPath(),
-                                level,
-                                getCompression(level)),
+                () -> createDataFileWriter(formatContext.pathFactory(level).newPath(), level),
                 suggestedFileSize);
-    }
-
-    private String getCompression(int level) {
-        if (null == levelCompressions) {
-            return fileCompression;
-        } else {
-            return levelCompressions.getOrDefault(level, fileCompression);
-        }
-    }
-
-    private String getFileFormat(int level) {
-        if (null == levelFormats) {
-            return fileFormat.getFormatIdentifier();
-        } else {
-            return levelFormats.getOrDefault(level, fileFormat.getFormatIdentifier());
-        }
     }
 
     public RollingFileWriter<KeyValue, DataFileMeta> createRollingChangelogFileWriter(int level) {
-
         return new RollingFileWriter<>(
                 () ->
                         createDataFileWriter(
-                                pathFactoryMap.get(getFileFormat(level)).newChangelogPath(),
-                                level,
-                                getCompression(level)),
+                                formatContext.pathFactory(level).newChangelogPath(), level),
                 suggestedFileSize);
     }
 
-    private KeyValueDataFileWriter createDataFileWriter(Path path, int level, String compression) {
+    private KeyValueDataFileWriter createDataFileWriter(Path path, int level) {
         KeyValueSerializer kvSerializer = new KeyValueSerializer(keyType, valueType);
-        String fileFormat = getFileFormat(level);
         return new KeyValueDataFileWriter(
                 fileIO,
-                writerFactoryMap.get(fileFormat),
+                formatContext.writerFactory(level),
                 path,
                 kvSerializer::toRow,
                 keyType,
                 valueType,
-                getTableStatsExtractor(fileFormat),
+                formatContext.extractor(level),
                 schemaId,
                 level,
-                compression,
+                formatContext.compression(level),
                 options);
     }
 
-    private TableStatsExtractor getTableStatsExtractor(String fileFormat) {
-        return null == fileFormat
-                ? tableStatsExtractor
-                : FileFormat.fromIdentifier(fileFormat, options.toConfiguration())
-                        .createStatsExtractor(
-                                recordType,
-                                StatsCollectorFactories.createStatsFactories(
-                                        options, recordType.getFieldNames()))
-                        .orElse(null);
-    }
-
     public void deleteFile(String filename, int level) {
-        fileIO.deleteQuietly(pathFactoryMap.get(getFileFormat(level)).toPath(filename));
+        fileIO.deleteQuietly(formatContext.pathFactory(level).toPath(filename));
     }
 
     public static Builder builder(
@@ -217,56 +160,105 @@ public class KeyValueFileWriterFactory {
         }
 
         public KeyValueFileWriterFactory build(
+                BinaryRow partition, int bucket, CoreOptions options) {
+            RowType fileRowType = KeyValue.schema(keyType, valueType);
+            WriteFormatContext context =
+                    new WriteFormatContext(
+                            partition,
+                            bucket,
+                            fileRowType,
+                            fileFormat,
+                            format2PathFactory,
+                            options);
+            return new KeyValueFileWriterFactory(
+                    fileIO, schemaId, keyType, valueType, context, suggestedFileSize, options);
+        }
+    }
+
+    private static class WriteFormatContext {
+
+        private final BinaryRow partition;
+        private final int bucket;
+        private final RowType rowType;
+        private final FieldStatsCollector.Factory[] statsCollectorFactories;
+        private final Map<String, FileStorePathFactory> format2PathFactory;
+
+        private final Function<Integer, FileFormat> level2Format;
+        private final Function<Integer, String> level2Compress;
+        private final Map<Integer, Optional<TableStatsExtractor>> level2Extractor = new HashMap<>();
+        private final Map<Integer, DataFilePathFactory> level2PathFactory = new HashMap<>();
+        private final Map<Integer, FormatWriterFactory> level2WriterFactory = new HashMap<>();
+
+        private WriteFormatContext(
                 BinaryRow partition,
                 int bucket,
-                Map<Integer, String> levelCompressions,
-                String fileCompression,
-                Map<Integer, String> levelFormats,
+                RowType rowType,
+                FileFormat defaultFormat,
+                Map<String, FileStorePathFactory> format2PathFactory,
                 CoreOptions options) {
-            RowType recordType = KeyValue.schema(keyType, valueType);
+            this.partition = partition;
+            this.bucket = bucket;
+            this.rowType = rowType;
+            this.format2PathFactory = format2PathFactory;
 
-            Map<String, FormatWriterFactory> writerFactoryMap = new HashMap<>();
-            writerFactoryMap.put(
-                    fileFormat.getFormatIdentifier(), fileFormat.createWriterFactory(recordType));
-            if (null != levelFormats) {
-                for (String fileFormat : levelFormats.values()) {
-                    writerFactoryMap.putIfAbsent(
-                            fileFormat,
-                            FileFormat.fromIdentifier(fileFormat, options.toConfiguration())
-                                    .createWriterFactory(recordType));
-                }
-            }
+            this.statsCollectorFactories =
+                    StatsCollectorFactories.createStatsFactories(options, rowType.getFieldNames());
 
-            Map<String, DataFilePathFactory> dataFilePathFactoryMap =
-                    format2PathFactory.entrySet().stream()
-                            .collect(
-                                    Collectors.toMap(
-                                            Map.Entry::getKey,
-                                            e ->
-                                                    e.getValue()
-                                                            .createDataFilePathFactory(
-                                                                    partition, bucket)));
+            Map<Integer, String> fileFormatPerLevel = options.fileFormatPerLevel();
+            Map<Integer, FileFormat> levelFormatMap = new HashMap<>();
+            this.level2Format =
+                    level ->
+                            levelFormatMap.computeIfAbsent(
+                                    level,
+                                    k -> {
+                                        String format = fileFormatPerLevel.get(level);
+                                        if (format == null) {
+                                            return defaultFormat;
+                                        }
+                                        return FileFormat.getFileFormat(
+                                                options.toConfiguration(), format);
+                                    });
 
-            return new KeyValueFileWriterFactory(
-                    fileIO,
-                    schemaId,
-                    keyType,
-                    valueType,
-                    recordType,
-                    fileFormat,
-                    writerFactoryMap,
-                    fileFormat
-                            .createStatsExtractor(
-                                    recordType,
-                                    StatsCollectorFactories.createStatsFactories(
-                                            options, recordType.getFieldNames()))
-                            .orElse(null),
-                    dataFilePathFactoryMap,
-                    suggestedFileSize,
-                    levelCompressions,
-                    fileCompression,
-                    levelFormats,
-                    options);
+            String defaultCompress = options.fileCompression();
+            Map<Integer, String> fileCompressionPerLevel = options.fileCompressionPerLevel();
+            Map<Integer, String> levelCompressMap = new HashMap<>();
+            this.level2Compress =
+                    level ->
+                            levelCompressMap.computeIfAbsent(
+                                    level,
+                                    k -> {
+                                        String compress = fileCompressionPerLevel.get(level);
+                                        return compress == null ? defaultCompress : compress;
+                                    });
+        }
+
+        private TableStatsExtractor extractor(int level) {
+            return level2Extractor
+                    .computeIfAbsent(
+                            level,
+                            k ->
+                                    level2Format
+                                            .apply(level)
+                                            .createStatsExtractor(rowType, statsCollectorFactories))
+                    .orElse(null);
+        }
+
+        private DataFilePathFactory pathFactory(int level) {
+            return level2PathFactory.computeIfAbsent(
+                    level,
+                    k ->
+                            format2PathFactory
+                                    .get(level2Format.apply(level).getFormatIdentifier())
+                                    .createDataFilePathFactory(partition, bucket));
+        }
+
+        private FormatWriterFactory writerFactory(int level) {
+            return level2WriterFactory.computeIfAbsent(
+                    level, k -> level2Format.apply(level).createWriterFactory(rowType));
+        }
+
+        private String compression(int level) {
+            return level2Compress.apply(level);
         }
     }
 }
