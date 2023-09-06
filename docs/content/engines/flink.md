@@ -45,10 +45,6 @@ Download the jar file with corresponding version.
 | Flink 1.14 | Bundled Jar  | [paimon-flink-1.14-{{< version >}}.jar](https://repo.maven.apache.org/maven2/org/apache/paimon/paimon-flink-1.14/{{< version >}}/paimon-flink-1.14-{{< version >}}.jar) |
 | Flink Action | Action Jar  | [paimon-flink-action-{{< version >}}.jar](https://repo.maven.apache.org/maven2/org/apache/paimon/paimon-flink-action/{{< version >}}/paimon-flink-action-{{< version >}}.jar) |
 
-{{< /stable >}}
-
-{{< unstable >}}
-
 | Version    | Type | Jar                                                                                                                                   |
 |------------|------|---------------------------------------------------------------------------------------------------------------------------------|
 | Flink 1.17 | Bundled Jar | [paimon-flink-1.17-{{< version >}}.jar](https://repository.apache.org/snapshots/org/apache/paimon/paimon-flink-1.17/{{< version >}}/) |
