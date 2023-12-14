@@ -42,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** Tests for {@link BatchWriteGeneratorTagOperator}. */
 public class BatchWriteGeneratorTagOperatorTest extends CommitterOperatorTest {
+
     @Test
     public void testBatchWriteGeneratorTag() throws Exception {
         FileStoreTable table = createFileStoreTable();
@@ -72,14 +73,12 @@ public class BatchWriteGeneratorTagOperatorTest extends CommitterOperatorTest {
         TagManager tagManager = table.tagManager();
 
         //  Generate tag name
-        String BATCH_WRITE_TAG_PREFIX = "batch-write-";
+        String prefix = "batch-write-";
         Instant instant =
                 Instant.ofEpochMilli(
                         Objects.requireNonNull(snapshotManager.latestSnapshot()).timeMillis());
         LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
-        String tagName =
-                BATCH_WRITE_TAG_PREFIX
-                        + localDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        String tagName = prefix + localDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
 
         // No tag is generated before the finish method
         assertThat(table.tagManager().tagCount()).isEqualTo(0);
