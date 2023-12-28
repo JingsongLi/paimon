@@ -47,12 +47,11 @@ public class QueryClientImpl implements QueryClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(QueryClientImpl.class);
 
-    private final ExecutorService queryExecutor;
     private final NetworkClient<KvRequest, KvResponse> networkClient;
     private final QueryLocation queryLocation;
 
     public QueryClientImpl(
-            QueryLocation queryLocation, int numEventLoopThreads, int numQueryThreads) {
+            QueryLocation queryLocation, int numEventLoopThreads) {
         this.queryLocation = queryLocation;
         final MessageSerializer<KvRequest, KvResponse> messageSerializer =
                 new MessageSerializer<>(
@@ -65,13 +64,6 @@ public class QueryClientImpl implements QueryClient {
                         numEventLoopThreads,
                         messageSerializer,
                         new DisabledServiceRequestStats());
-
-        ThreadFactory threadFactory =
-                new ThreadFactoryBuilder()
-                        .setDaemon(true)
-                        .setNameFormat("Paimon Query Client")
-                        .build();
-        this.queryExecutor = Executors.newFixedThreadPool(numQueryThreads, threadFactory);
     }
 
     @Override
@@ -106,8 +98,7 @@ public class QueryClientImpl implements QueryClient {
                         } else {
                             result.complete(t.values());
                         }
-                    },
-                    queryExecutor);
+                    });
 
             result.whenComplete((t, throwable) -> operationFuture.cancel(false));
         }
@@ -125,14 +116,6 @@ public class QueryClientImpl implements QueryClient {
     }
 
     public CompletableFuture<Void> shutdown() {
-        CompletableFuture<Void> queryExecShutdownFuture =
-                CompletableFuture.runAsync(
-                        () -> {
-                            if (queryExecutor != null) {
-                                ExecutorUtils.gracefulShutdown(
-                                        10L, TimeUnit.MINUTES, queryExecutor);
-                            }
-                        });
-        return CompletableFuture.allOf(queryExecShutdownFuture, networkClient.shutdown());
+        return networkClient.shutdown();
     }
 }
