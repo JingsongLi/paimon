@@ -18,8 +18,8 @@
 
 package org.apache.paimon.service.server;
 
-import org.apache.paimon.lookup.QueryLookup;
-import org.apache.paimon.lookup.QueryServer;
+import org.apache.paimon.query.QueryServer;
+import org.apache.paimon.query.TableQuery;
 import org.apache.paimon.service.messages.KvRequest;
 import org.apache.paimon.service.messages.KvResponse;
 import org.apache.paimon.service.network.AbstractServerHandler;
@@ -40,8 +40,8 @@ public class KvQueryServer extends NetworkServer<KvRequest, KvResponse> implemen
 
     private static final Logger LOG = LoggerFactory.getLogger(KvQueryServer.class);
 
-    /** The {@link QueryLookup} to query. */
-    private final QueryLookup lookup;
+    /** The {@link TableQuery} to query. */
+    private final TableQuery lookup;
 
     private final ServiceRequestStats stats;
 
@@ -52,7 +52,7 @@ public class KvQueryServer extends NetworkServer<KvRequest, KvResponse> implemen
             final Iterator<Integer> bindPortIterator,
             final Integer numEventLoopThreads,
             final Integer numQueryThreads,
-            final QueryLookup lookup,
+            final TableQuery lookup,
             final ServiceRequestStats stats) {
 
         super(

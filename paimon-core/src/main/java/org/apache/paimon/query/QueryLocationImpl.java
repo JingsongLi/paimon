@@ -16,48 +16,39 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.lookup;
+package org.apache.paimon.query;
+
+import org.apache.paimon.data.BinaryRow;
+import org.apache.paimon.service.ServiceManager;
 
 import java.net.InetSocketAddress;
 import java.util.Optional;
 
+import static org.apache.paimon.service.ServiceManager.SERVICE_PRIMARY_KEY_LOOKUP;
+import static org.apache.paimon.table.sink.ChannelComputer.select;
 
-import org.apache.paimon.data.BinaryRow;
-import org.apache.paimon.fs.FileIO;
-import org.apache.paimon.fs.Path;
-import org.apache.paimon.service.ServiceManager;
-
-
-import static org.apache.paimon.service.ServiceManager.SERVICE_LOOKUP;
-
-/** */
+/** An implementation of {@link QueryLocation} to get location from {@link ServiceManager}. */
 public class QueryLocationImpl implements QueryLocation {
 
-    private final Path tablePath;
-    private final ServiceManager serviceManager;
+    private final ServiceManager manager;
 
     private InetSocketAddress[] addressesCache;
 
-    public QueryLocationImpl(FileIO fileIO, Path tablePath) {
-        this.tablePath = tablePath;
-        this.serviceManager = new ServiceManager(fileIO, tablePath);
+    public QueryLocationImpl(ServiceManager manager) {
+        this.manager = manager;
     }
 
     @Override
     public InetSocketAddress getLocation(BinaryRow partition, int bucket, boolean forceUpdate) {
         if (addressesCache == null || forceUpdate) {
-            Optional<InetSocketAddress[]> addresses = serviceManager.service(SERVICE_LOOKUP);
+            Optional<InetSocketAddress[]> addresses = manager.service(SERVICE_PRIMARY_KEY_LOOKUP);
             if (!addresses.isPresent()) {
-                throw new RuntimeException("Cannot find address for table path: " + tablePath);
+                throw new RuntimeException(
+                        "Cannot find address for table path: " + manager.tablePath());
             }
             addressesCache = addresses.get();
         }
 
         return addressesCache[select(partition, bucket, addressesCache.length)];
-    }
-
-    private static int select(BinaryRow partition, int bucket, int numChannels) {
-        int startChannel = Math.abs(partition.hashCode()) % numChannels;
-        return (startChannel + bucket) % numChannels;
     }
 }

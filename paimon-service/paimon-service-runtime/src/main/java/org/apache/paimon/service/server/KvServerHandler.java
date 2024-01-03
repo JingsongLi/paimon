@@ -19,7 +19,7 @@
 package org.apache.paimon.service.server;
 
 import org.apache.paimon.data.BinaryRow;
-import org.apache.paimon.lookup.QueryLookup;
+import org.apache.paimon.query.TableQuery;
 import org.apache.paimon.service.messages.KvRequest;
 import org.apache.paimon.service.messages.KvResponse;
 import org.apache.paimon.service.network.AbstractServerHandler;
@@ -43,7 +43,7 @@ import java.util.concurrent.CompletableFuture;
 @ChannelHandler.Sharable
 public class KvServerHandler extends AbstractServerHandler<KvRequest, KvResponse> {
 
-    private final QueryLookup lookup;
+    private final TableQuery lookup;
 
     /**
      * Create the handler used by the {@link KvQueryServer}.
@@ -56,7 +56,7 @@ public class KvServerHandler extends AbstractServerHandler<KvRequest, KvResponse
      */
     public KvServerHandler(
             final KvQueryServer server,
-            final QueryLookup lookup,
+            final TableQuery lookup,
             final MessageSerializer<KvRequest, KvResponse> serializer,
             final ServiceRequestStats stats) {
         super(server, serializer, stats);

@@ -33,6 +33,8 @@ import org.apache.paimon.operation.KeyValueFileStoreScan;
 import org.apache.paimon.operation.Lock;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.predicate.Predicate;
+import org.apache.paimon.query.TableQuery;
+import org.apache.paimon.query.TableQueryImpl;
 import org.apache.paimon.reader.RecordReader;
 import org.apache.paimon.schema.KeyValueFieldsExtractor;
 import org.apache.paimon.schema.TableSchema;
@@ -48,6 +50,7 @@ import org.apache.paimon.types.RowKind;
 import org.apache.paimon.types.RowType;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.function.BiConsumer;
 
 import static org.apache.paimon.predicate.PredicateBuilder.and;
@@ -204,5 +207,10 @@ public class PrimaryKeyFileStoreTable extends AbstractFileStoreTable {
                                     : rowKindGenerator.generate(row);
                     return kv.replace(record.primaryKey(), sequenceNumber, rowKind, row);
                 });
+    }
+
+    @Override
+    public TableQuery newQuery() {
+        return new TableQueryImpl(this, store().newWrite(UUID.randomUUID().toString()));
     }
 }

@@ -18,34 +18,24 @@
 
 package org.apache.paimon.service;
 
+import org.apache.paimon.fs.FileIO;
+import org.apache.paimon.fs.Path;
+import org.apache.paimon.utils.JsonSerdeUtil;
+
 import java.io.IOException;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalLong;
-import java.util.stream.Collectors;
 
-import static org.apache.paimon.utils.FileUtils.listOriginalVersionedFiles;
-import static org.apache.paimon.utils.FileUtils.listVersionedFileStatus;
-
-
-import org.apache.paimon.consumer.Consumer;
-import org.apache.paimon.fs.FileIO;
-import org.apache.paimon.fs.Path;
-import org.apache.paimon.utils.DateTimeUtils;
-import org.apache.paimon.utils.JsonSerdeUtil;
-
-/** Manage services. */
+/** A manager to manage services, for example, the service to lookup row from the primary key. */
 public class ServiceManager implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    public static final String SERVICE_LOOKUP = "SERVICE-LOOKUP";
+    private static final String SERVICE_PREFIX = "service-";
+
+    public static final String SERVICE_PRIMARY_KEY_LOOKUP = "primary-key-lookup";
 
     private final FileIO fileIO;
     private final Path tablePath;
@@ -55,27 +45,32 @@ public class ServiceManager implements Serializable {
         this.tablePath = tablePath;
     }
 
-    public Optional<InetSocketAddress[]> service(String serviceId) {
+    public Path tablePath() {
+        return tablePath;
+    }
+
+    public Optional<InetSocketAddress[]> service(String id) {
         try {
-            return fileIO.readOverwrittenFileUtf8(servicePath(serviceId)).map(s -> JsonSerdeUtil.fromJson(s, InetSocketAddress[].class));
+            return fileIO.readOverwrittenFileUtf8(servicePath(id))
+                    .map(s -> JsonSerdeUtil.fromJson(s, InetSocketAddress[].class));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
-    public void resetService(String service, InetSocketAddress[] addresses) {
+    public void resetService(String id, InetSocketAddress[] addresses) {
         try {
-            fileIO.overwriteFileUtf8(servicePath(service), JsonSerdeUtil.toJson(addresses));
+            fileIO.overwriteFileUtf8(servicePath(id), JsonSerdeUtil.toJson(addresses));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
-    public void deleteService(String serviceId) {
-        fileIO.deleteQuietly(servicePath(serviceId));
+    public void deleteService(String id) {
+        fileIO.deleteQuietly(servicePath(id));
     }
 
-    private Path servicePath(String serviceId) {
-        return new Path(tablePath + "/service/" + serviceId);
+    private Path servicePath(String id) {
+        return new Path(tablePath + "/service/" + SERVICE_PREFIX + id);
     }
 }

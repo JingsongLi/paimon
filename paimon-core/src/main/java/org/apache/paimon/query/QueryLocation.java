@@ -16,14 +16,19 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.lookup;
+package org.apache.paimon.query;
 
 import org.apache.paimon.data.BinaryRow;
 
-import java.util.concurrent.CompletableFuture;
+import java.net.InetSocketAddress;
 
-/** */
-public interface QueryClient {
+/** An interface to get query location. */
+public interface QueryLocation {
 
-    CompletableFuture<BinaryRow[]> getValues(BinaryRow partition, int bucket, BinaryRow[] keys);
+    /**
+     * Get location from partition and bucket.
+     *
+     * @param forceUpdate whether to refresh location cache.
+     */
+    InetSocketAddress getLocation(BinaryRow partition, int bucket, boolean forceUpdate);
 }

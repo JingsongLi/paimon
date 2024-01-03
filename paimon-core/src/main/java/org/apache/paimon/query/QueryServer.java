@@ -16,12 +16,26 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.lookup;
+package org.apache.paimon.query;
 
-import org.apache.paimon.data.BinaryRow;
+import java.net.InetSocketAddress;
 
-/** An interface to provide lookup function. */
-public interface QueryLookup {
+/**
+ * An interface for the Server running on each Node in the cluster. This server is responsible for
+ * serving requests coming from the client.
+ */
+public interface QueryServer {
 
-    BinaryRow[] lookup(BinaryRow partition, int bucket, BinaryRow[] keys);
+    /**
+     * Returns the {@link InetSocketAddress address} the server is listening to.
+     *
+     * @return Server address.
+     */
+    InetSocketAddress getServerAddress();
+
+    /** Starts the server. */
+    void start() throws Throwable;
+
+    /** Shuts down the server and all related thread pools. */
+    void shutdown();
 }

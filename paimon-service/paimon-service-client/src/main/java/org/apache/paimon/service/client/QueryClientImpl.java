@@ -19,17 +19,14 @@
 package org.apache.paimon.service.client;
 
 import org.apache.paimon.data.BinaryRow;
-import org.apache.paimon.lookup.QueryClient;
-import org.apache.paimon.lookup.QueryLocation;
+import org.apache.paimon.query.QueryClient;
+import org.apache.paimon.query.QueryLocation;
 import org.apache.paimon.service.messages.KvRequest;
 import org.apache.paimon.service.messages.KvResponse;
 import org.apache.paimon.service.network.NetworkClient;
 import org.apache.paimon.service.network.messages.MessageSerializer;
 import org.apache.paimon.service.network.stats.DisabledServiceRequestStats;
-import org.apache.paimon.utils.ExecutorUtils;
 import org.apache.paimon.utils.FutureUtils;
-
-import org.apache.paimon.shade.guava30.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,12 +34,8 @@ import org.slf4j.LoggerFactory;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 
-/** */
+/** An implementation of {@link QueryClient}, */
 public class QueryClientImpl implements QueryClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(QueryClientImpl.class);
@@ -50,8 +43,7 @@ public class QueryClientImpl implements QueryClient {
     private final NetworkClient<KvRequest, KvResponse> networkClient;
     private final QueryLocation queryLocation;
 
-    public QueryClientImpl(
-            QueryLocation queryLocation, int numEventLoopThreads) {
+    public QueryClientImpl(QueryLocation queryLocation, int numEventLoopThreads) {
         this.queryLocation = queryLocation;
         final MessageSerializer<KvRequest, KvResponse> messageSerializer =
                 new MessageSerializer<>(

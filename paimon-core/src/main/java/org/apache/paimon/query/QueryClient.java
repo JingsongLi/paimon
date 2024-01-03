@@ -16,14 +16,14 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.lookup;
+package org.apache.paimon.query;
 
 import org.apache.paimon.data.BinaryRow;
 
-import java.net.InetSocketAddress;
+import java.util.concurrent.CompletableFuture;
 
-/** */
-public interface QueryLocation {
+/** An interface for the Client to get values from Servers. */
+public interface QueryClient {
 
-    InetSocketAddress getLocation(BinaryRow partition, int bucket, boolean forceUpdate);
+    CompletableFuture<BinaryRow[]> getValues(BinaryRow partition, int bucket, BinaryRow[] keys);
 }
