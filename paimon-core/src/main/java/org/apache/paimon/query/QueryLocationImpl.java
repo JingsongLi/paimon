@@ -24,7 +24,7 @@ import org.apache.paimon.service.ServiceManager;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 
-import static org.apache.paimon.service.ServiceManager.SERVICE_PRIMARY_KEY_LOOKUP;
+import static org.apache.paimon.service.ServiceManager.PRIMARY_KEY_LOOKUP;
 import static org.apache.paimon.table.sink.ChannelComputer.select;
 
 /** An implementation of {@link QueryLocation} to get location from {@link ServiceManager}. */
@@ -41,7 +41,7 @@ public class QueryLocationImpl implements QueryLocation {
     @Override
     public InetSocketAddress getLocation(BinaryRow partition, int bucket, boolean forceUpdate) {
         if (addressesCache == null || forceUpdate) {
-            Optional<InetSocketAddress[]> addresses = manager.service(SERVICE_PRIMARY_KEY_LOOKUP);
+            Optional<InetSocketAddress[]> addresses = manager.service(PRIMARY_KEY_LOOKUP);
             if (!addresses.isPresent()) {
                 throw new RuntimeException(
                         "Cannot find address for table path: " + manager.tablePath());

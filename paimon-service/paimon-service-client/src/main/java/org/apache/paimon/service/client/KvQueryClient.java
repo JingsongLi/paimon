@@ -20,6 +20,7 @@ package org.apache.paimon.service.client;
 
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.query.QueryLocation;
+import org.apache.paimon.service.exceptions.UnknownPartitionBucketException;
 import org.apache.paimon.service.messages.KvRequest;
 import org.apache.paimon.service.messages.KvResponse;
 import org.apache.paimon.service.network.NetworkClient;
@@ -74,14 +75,15 @@ public class KvQueryClient {
             operationFuture.whenCompleteAsync(
                     (t, throwable) -> {
                         if (throwable != null) {
-                            if (throwable.getCause() instanceof ConnectException) {
+                            if (throwable instanceof UnknownPartitionBucketException
+                                    || throwable.getCause() instanceof ConnectException) {
 
                                 // These failures are likely to be caused by out-of-sync location.
                                 // Therefore, we retry this query and force lookup the location.
 
                                 LOG.debug(
                                         "Retrying after failing to retrieve state due to: {}.",
-                                        throwable.getCause().getMessage());
+                                        throwable.getMessage());
                                 executeActionAsync(result, request, true);
                             } else {
                                 result.completeExceptionally(throwable);

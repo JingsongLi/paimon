@@ -40,44 +40,39 @@ public class KvQueryServer extends NetworkServer<KvRequest, KvResponse> implemen
 
     private static final Logger LOG = LoggerFactory.getLogger(KvQueryServer.class);
 
-    /** The {@link TableQuery} to query. */
+    private final int serverId;
+    private final int numServers;
     private final TableQuery lookup;
-
     private final ServiceRequestStats stats;
 
-    private MessageSerializer<KvRequest, KvResponse> serializer;
-
     public KvQueryServer(
+            final int serverId,
+            final int numServers,
             final String bindAddress,
             final Iterator<Integer> bindPortIterator,
             final Integer numEventLoopThreads,
             final Integer numQueryThreads,
             final TableQuery lookup,
             final ServiceRequestStats stats) {
-
         super(
                 "Kv Query Server",
                 bindAddress,
                 bindPortIterator,
                 numEventLoopThreads,
                 numQueryThreads);
+        this.serverId = serverId;
+        this.numServers = numServers;
         this.stats = Preconditions.checkNotNull(stats);
         this.lookup = Preconditions.checkNotNull(lookup);
     }
 
     @Override
     public AbstractServerHandler<KvRequest, KvResponse> initializeHandler() {
-        this.serializer =
+        MessageSerializer<KvRequest, KvResponse> serializer =
                 new MessageSerializer<>(
                         new KvRequest.KvRequestDeserializer(),
                         new KvResponse.KvResponseDeserializer());
-        return new KvServerHandler(this, lookup, serializer, stats);
-    }
-
-    public MessageSerializer<KvRequest, KvResponse> getSerializer() {
-        Preconditions.checkState(
-                serializer != null, "Server " + getServerName() + " has not been started.");
-        return serializer;
+        return new KvServerHandler(this, serverId, numServers, lookup, serializer, stats);
     }
 
     @Override
@@ -94,7 +89,6 @@ public class KvQueryServer extends NetworkServer<KvRequest, KvResponse> implemen
     public void shutdown() {
         try {
             shutdownServer().get(10L, TimeUnit.SECONDS);
-            lookup.close();
             LOG.info("{} was shutdown successfully.", getServerName());
         } catch (Exception e) {
             LOG.warn("{} shutdown failed: {}", getServerName(), e);

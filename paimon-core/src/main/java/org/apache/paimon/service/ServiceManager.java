@@ -33,9 +33,9 @@ public class ServiceManager implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    private static final String SERVICE_PREFIX = "service-";
+    public static final String SERVICE_PREFIX = "service-";
 
-    public static final String SERVICE_PRIMARY_KEY_LOOKUP = "primary-key-lookup";
+    public static final String PRIMARY_KEY_LOOKUP = "primary-key-lookup";
 
     private final FileIO fileIO;
     private final Path tablePath;

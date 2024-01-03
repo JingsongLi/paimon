@@ -34,19 +34,19 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 import static org.apache.paimon.io.DataFileTestUtils.row;
-import static org.apache.paimon.service.ServiceManager.SERVICE_PRIMARY_KEY_LOOKUP;
+import static org.apache.paimon.service.ServiceManager.PRIMARY_KEY_LOOKUP;
 import static org.apache.paimon.table.sink.ChannelComputer.select;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Test for remote lookup. */
-public class LookupNetworkTableTest extends PrimaryKeyTableTestBase {
+public class KvQueryTableTest extends PrimaryKeyTableTestBase {
 
     private TableQuery query0;
     private TableQuery query1;
@@ -57,47 +57,67 @@ public class LookupNetworkTableTest extends PrimaryKeyTableTestBase {
     private KvQueryClient client;
 
     @BeforeEach
-    public void beforeEach() throws Throwable {
+    public void beforeEach() {
         this.query0 = table.newQuery();
         this.query0.withIOManager(IOManager.create(tempPath.toString()));
 
         this.query1 = table.newQuery();
         this.query1.withIOManager(IOManager.create(tempPath.toString()));
 
-        this.server0 = createServer(query0);
-        this.server1 = createServer(query1);
+        this.server0 = createServer(0, query0, 7777);
+        this.server1 = createServer(1, query1, 7900);
+        registryServers();
 
-        ServiceManager serviceManager = table.store().newServiceManager();
-        serviceManager.resetService(
-                SERVICE_PRIMARY_KEY_LOOKUP,
-                new InetSocketAddress[] {server0.getServerAddress(), server1.getServerAddress()});
-
-        this.client = new KvQueryClient(new QueryLocationImpl(serviceManager), 1);
+        this.client =
+                new KvQueryClient(new QueryLocationImpl(table.store().newServiceManager()), 1);
     }
 
-    private KvQueryServer createServer(TableQuery query) throws Throwable {
-        KvQueryServer server =
-                new KvQueryServer(
-                        InetAddress.getLocalHost().getHostName(),
-                        Arrays.asList(7777, 7900).iterator(),
-                        1,
-                        1,
-                        query,
-                        new DisabledServiceRequestStats());
-        server.start();
-        return server;
+    private void registryServers() {
+        InetSocketAddress[] addresses =
+                new InetSocketAddress[] {server0.getServerAddress(), server1.getServerAddress()};
+        ServiceManager serviceManager = table.store().newServiceManager();
+        serviceManager.resetService(PRIMARY_KEY_LOOKUP, addresses);
+    }
+
+    private KvQueryServer createServer(int serverId, TableQuery query, int port) {
+        try {
+            KvQueryServer server =
+                    new KvQueryServer(
+                            serverId,
+                            2,
+                            InetAddress.getLocalHost().getHostName(),
+                            Collections.singletonList(port).iterator(),
+                            1,
+                            1,
+                            query,
+                            new DisabledServiceRequestStats());
+            server.start();
+            return server;
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @AfterEach
-    public void afterEach() {
+    public void afterEach() throws IOException {
+        shutdownServers();
+        if (query0 != null) {
+            query0.close();
+        }
+        if (query1 != null) {
+            query1.close();
+        }
+        if (client != null) {
+            client.shutdown();
+        }
+    }
+
+    private void shutdownServers() {
         if (server0 != null) {
             server0.shutdown();
         }
         if (server1 != null) {
             server1.shutdown();
-        }
-        if (client != null) {
-            client.shutdown();
         }
     }
 
@@ -123,6 +143,57 @@ public class LookupNetworkTableTest extends PrimaryKeyTableTestBase {
         write(1, 2, 1);
         result = client.getValues(row(1), 0, new BinaryRow[] {row(1), row(2)}).get();
         assertThat(result).containsOnly(row(1, 1, 1), row(1, 2, 1));
+    }
+
+    @Test
+    public void testServerRestartSamePorts() throws Throwable {
+        innerTestServerRestart(
+                () -> {
+                    shutdownServers();
+                    KvQueryTableTest.this.server0 = createServer(0, query0, 7777);
+                    KvQueryTableTest.this.server1 = createServer(1, query1, 7900);
+                    registryServers();
+                });
+    }
+
+    @Test
+    public void testServerRestartSwitchPorts() throws Throwable {
+        innerTestServerRestart(
+                () -> {
+                    shutdownServers();
+                    KvQueryTableTest.this.server0 = createServer(0, query0, 7900);
+                    KvQueryTableTest.this.server1 = createServer(1, query1, 7777);
+                    registryServers();
+                });
+    }
+
+    @Test
+    public void testServerRestartChangePorts() throws Throwable {
+        innerTestServerRestart(
+                () -> {
+                    shutdownServers();
+                    KvQueryTableTest.this.server0 = createServer(0, query0, 7778);
+                    KvQueryTableTest.this.server1 = createServer(1, query1, 7901);
+                    registryServers();
+                });
+    }
+
+    private void innerTestServerRestart(Runnable restart) throws Throwable {
+        // insert many records
+        BinaryRow[] result;
+        for (int i = 1; i < 10; i++) {
+            write(i, 1, 2);
+            result = client.getValues(row(i), 0, new BinaryRow[] {row(1)}).get();
+            assertThat(result).containsOnly(row(i, 1, 2));
+        }
+
+        restart.run();
+
+        // query again
+        for (int i = 1; i < 10; i++) {
+            result = client.getValues(row(i), 0, new BinaryRow[] {row(1)}).get();
+            assertThat(result).containsOnly(row(i, 1, 2));
+        }
     }
 
     private void write(int partition, int key, int value) throws Exception {
