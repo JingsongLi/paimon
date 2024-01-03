@@ -94,6 +94,7 @@ public class KvQueryServer extends NetworkServer<KvRequest, KvResponse> implemen
     public void shutdown() {
         try {
             shutdownServer().get(10L, TimeUnit.SECONDS);
+            lookup.close();
             LOG.info("{} was shutdown successfully.", getServerName());
         } catch (Exception e) {
             LOG.warn("{} shutdown failed: {}", getServerName(), e);

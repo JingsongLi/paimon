@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /** /** A class for the Client to get values from Servers. */
 public class KvQueryClient {
@@ -51,7 +52,7 @@ public class KvQueryClient {
 
         this.networkClient =
                 new NetworkClient<>(
-                        "Paimon Query Nettey Client",
+                        "Paimon KeyValue Query Client",
                         numEventLoopThreads,
                         messageSerializer,
                         new DisabledServiceRequestStats());
@@ -105,7 +106,12 @@ public class KvQueryClient {
         return networkClient.sendRequest(serverAddress, request);
     }
 
-    public CompletableFuture<Void> shutdown() {
-        return networkClient.shutdown();
+    public void shutdown() {
+        try {
+            networkClient.shutdown().get(10L, TimeUnit.SECONDS);
+            LOG.info("{} was shutdown successfully.", networkClient.getClientName());
+        } catch (Exception e) {
+            LOG.warn("{} shutdown failed: {}", networkClient.getClientName(), e);
+        }
     }
 }
