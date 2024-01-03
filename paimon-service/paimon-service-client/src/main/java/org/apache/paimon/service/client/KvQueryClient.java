@@ -19,7 +19,6 @@
 package org.apache.paimon.service.client;
 
 import org.apache.paimon.data.BinaryRow;
-import org.apache.paimon.query.QueryClient;
 import org.apache.paimon.query.QueryLocation;
 import org.apache.paimon.service.messages.KvRequest;
 import org.apache.paimon.service.messages.KvResponse;
@@ -35,15 +34,15 @@ import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
 
-/** An implementation of {@link QueryClient}, */
-public class QueryClientImpl implements QueryClient {
+/** /** A class for the Client to get values from Servers. */
+public class KvQueryClient {
 
-    private static final Logger LOG = LoggerFactory.getLogger(QueryClientImpl.class);
+    private static final Logger LOG = LoggerFactory.getLogger(KvQueryClient.class);
 
     private final NetworkClient<KvRequest, KvResponse> networkClient;
     private final QueryLocation queryLocation;
 
-    public QueryClientImpl(QueryLocation queryLocation, int numEventLoopThreads) {
+    public KvQueryClient(QueryLocation queryLocation, int numEventLoopThreads) {
         this.queryLocation = queryLocation;
         final MessageSerializer<KvRequest, KvResponse> messageSerializer =
                 new MessageSerializer<>(
@@ -58,7 +57,6 @@ public class QueryClientImpl implements QueryClient {
                         new DisabledServiceRequestStats());
     }
 
-    @Override
     public CompletableFuture<BinaryRow[]> getValues(
             BinaryRow partition, int bucket, BinaryRow[] keys) {
         CompletableFuture<BinaryRow[]> response = new CompletableFuture<>();

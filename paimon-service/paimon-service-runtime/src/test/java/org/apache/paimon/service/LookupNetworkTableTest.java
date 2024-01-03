@@ -24,7 +24,7 @@ import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.disk.IOManager;
 import org.apache.paimon.query.QueryLocationImpl;
 import org.apache.paimon.query.TableQuery;
-import org.apache.paimon.service.client.QueryClientImpl;
+import org.apache.paimon.service.client.KvQueryClient;
 import org.apache.paimon.service.network.stats.DisabledServiceRequestStats;
 import org.apache.paimon.service.server.KvQueryServer;
 import org.apache.paimon.table.sink.BatchTableWrite;
@@ -50,7 +50,7 @@ public class LookupNetworkTableTest extends PrimaryKeyTableTestBase {
 
     private TableQuery tableQuery;
     private KvQueryServer server;
-    private QueryClientImpl client;
+    private KvQueryClient client;
 
     @BeforeEach
     public void beforeEach() throws Throwable {
@@ -70,7 +70,7 @@ public class LookupNetworkTableTest extends PrimaryKeyTableTestBase {
         serviceManager.resetService(
                 SERVICE_PRIMARY_KEY_LOOKUP, new InetSocketAddress[] {server.getServerAddress()});
 
-        this.client = new QueryClientImpl(new QueryLocationImpl(serviceManager), 1);
+        this.client = new KvQueryClient(new QueryLocationImpl(serviceManager), 1);
     }
 
     @AfterEach
