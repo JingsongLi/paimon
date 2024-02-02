@@ -50,7 +50,8 @@ public class InMemoryBuffer implements RowBuffer {
 
     private boolean isInitialized;
 
-    InMemoryBuffer(MemorySegmentPool pool, AbstractRowDataSerializer<InternalRow> serializer) {
+    public InMemoryBuffer(
+            MemorySegmentPool pool, AbstractRowDataSerializer<InternalRow> serializer) {
         // serializer has states, so we must duplicate
         this.serializer = (AbstractRowDataSerializer<InternalRow>) serializer.duplicate();
         this.pool = pool;
@@ -124,11 +125,11 @@ public class InMemoryBuffer implements RowBuffer {
         return new InMemoryBufferIterator(recordBuffer, serializer);
     }
 
-    ArrayList<MemorySegment> getRecordBufferSegments() {
+    public ArrayList<MemorySegment> getRecordBufferSegments() {
         return recordBufferSegments;
     }
 
-    long getCurrentDataBufferOffset() {
+    public long getCurrentDataBufferOffset() {
         return currentDataBufferOffset;
     }
 
