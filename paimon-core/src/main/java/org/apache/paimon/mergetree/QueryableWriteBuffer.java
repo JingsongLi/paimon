@@ -19,14 +19,18 @@
 package org.apache.paimon.mergetree;
 
 import org.apache.paimon.KeyValue;
+import org.apache.paimon.codegen.CodeGenUtils;
+import org.apache.paimon.codegen.RecordComparator;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.data.RandomAccessInputView;
+import org.apache.paimon.data.serializer.BinaryRowSerializer;
 import org.apache.paimon.data.serializer.InternalRowSerializer;
 import org.apache.paimon.disk.InMemoryBuffer;
 import org.apache.paimon.memory.MemorySegmentPool;
 import org.apache.paimon.memory.ReservedMemorySegmentPool;
 import org.apache.paimon.mergetree.compact.MergeFunction;
+import org.apache.paimon.mergetree.compact.ReducerMergeFunctionWrapper;
 import org.apache.paimon.sort.BinaryInMemorySortBuffer;
 import org.apache.paimon.types.RowKind;
 import org.apache.paimon.types.RowType;
@@ -36,29 +40,35 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.Comparator;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
+import java.util.NavigableSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 /** A {@link WriteBuffer} which stores records in {@link BinaryInMemorySortBuffer}. */
 public class QueryableWriteBuffer implements WriteBuffer {
 
     private final InternalRowSerializer keySerializer;
+    private final BinaryRowSerializer valueDeserializer;
+    private final int pageSize;
     private final InMemoryBuffer buffer;
-    private final RandomAccessInputView inputView;
 
-    private final ConcurrentHashMap<BinaryRow, ConcurrentSkipListSet<WriteValue>> index;
+    private final Map<BinaryRow, NavigableSet<WriteValue>> index;
 
     public QueryableWriteBuffer(RowType keyType, RowType valueType, MemorySegmentPool memoryPool) {
         this.keySerializer = new InternalRowSerializer(keyType);
+        this.valueDeserializer = new BinaryRowSerializer(valueType.getFieldCount());
+        this.pageSize = memoryPool.pageSize();
         // reserve memory for key index heap
         this.buffer =
                 new InMemoryBuffer(
                         new ReservedMemorySegmentPool(memoryPool, memoryPool.freePages() / 2),
                         new InternalRowSerializer(valueType));
-        this.inputView =
-                new RandomAccessInputView(buffer.getRecordBufferSegments(), memoryPool.pageSize());
 
-        this.index = new ConcurrentHashMap<>();
+        RecordComparator keyComparator =
+                CodeGenUtils.newRecordComparator(keyType.getFieldTypes(), "KeyComparator");
+        this.index = new ConcurrentSkipListMap<>(keyComparator);
     }
 
     @Override
@@ -99,12 +109,54 @@ public class QueryableWriteBuffer implements WriteBuffer {
             MergeFunction<KeyValue> mergeFunction,
             @Nullable WriteBuffer.KvConsumer rawConsumer,
             KvConsumer mergedConsumer)
-            throws IOException {}
+            throws IOException {
+        ReducerMergeFunctionWrapper merger = new ReducerMergeFunctionWrapper(mergeFunction);
+        RandomAccessInputView inputView = createView();
+        for (Map.Entry<BinaryRow, NavigableSet<WriteValue>> entry : index.entrySet()) {
+            BinaryRow key = entry.getKey();
+            Set<WriteValue> values = entry.getValue();
+            merger.reset();
+            for (WriteValue v : values) {
+                inputView.setReadPosition(v.offset);
+                BinaryRow row = valueDeserializer.deserialize(inputView);
+                KeyValue kv = new KeyValue().replace(key, v.sequenceNumber, v.valueKind, row);
+                if (rawConsumer != null) {
+                    rawConsumer.accept(kv);
+                }
+                merger.add(kv);
+            }
+            KeyValue result = merger.getResult();
+            if (result != null) {
+                mergedConsumer.accept(result);
+            }
+        }
+    }
 
     @Override
     public void clear() {
         this.buffer.reset();
         this.index.clear();
+    }
+
+    private RandomAccessInputView createView() {
+        return new RandomAccessInputView(buffer.getRecordBufferSegments(), pageSize);
+    }
+
+    @Nullable
+    public BinaryRow lookupLatest(BinaryRow key) {
+        NavigableSet<WriteValue> values = index.get(key);
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+
+        WriteValue value = values.last();
+        RandomAccessInputView view = createView();
+        view.setReadPosition(value.offset);
+        try {
+            return valueDeserializer.deserialize(view);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static class WriteValue implements Comparable<WriteValue> {

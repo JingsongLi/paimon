@@ -27,11 +27,14 @@ import org.apache.paimon.memory.MemorySegment;
 import org.apache.paimon.memory.MemorySegmentUtils;
 import org.apache.paimon.memory.MemorySegmentWritable;
 
+import javax.annotation.concurrent.ThreadSafe;
+
 import java.io.IOException;
 
 import static org.apache.paimon.utils.Preconditions.checkArgument;
 
 /** Serializer for {@link BinaryRow}. */
+@ThreadSafe
 public class BinaryRowSerializer extends AbstractRowDataSerializer<BinaryRow> {
 
     private static final long serialVersionUID = 1L;

@@ -146,7 +146,7 @@ public class InternalRowSerializer extends AbstractRowDataSerializer<InternalRow
             reuseRow = new BinaryRow(types.length);
             reuseWriter = new BinaryRowWriter(reuseRow);
         }
-        reuseWriter.reset();
+        reuseWriter.reset();s
         reuseWriter.writeRowKind(row.getRowKind());
         for (int i = 0; i < types.length; i++) {
             if (row.isNullAt(i)) {
