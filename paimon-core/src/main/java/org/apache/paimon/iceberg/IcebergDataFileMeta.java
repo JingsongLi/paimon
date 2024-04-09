@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Iceberg data file meta. */
-public class IcebergDataFile {
+public class IcebergDataFileMeta {
 
     private final int content;
     private final String filePath;
@@ -38,7 +38,7 @@ public class IcebergDataFile {
     private final long recordCount;
     private final long fileSizeInBytes;
 
-    public IcebergDataFile(
+    public IcebergDataFileMeta(
             int content,
             String filePath,
             String fileFormat,
@@ -102,7 +102,7 @@ public class IcebergDataFile {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        IcebergDataFile that = (IcebergDataFile) o;
+        IcebergDataFileMeta that = (IcebergDataFileMeta) o;
         return content == that.content
                 && specId == that.specId
                 && recordCount == that.recordCount

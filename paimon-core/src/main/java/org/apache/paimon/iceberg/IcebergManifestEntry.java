@@ -29,18 +29,46 @@ import java.util.Objects;
 /** Entry of an Iceberg manifest file. */
 public class IcebergManifestEntry {
 
-    private final int status;
+    enum Status {
+        EXISTING(0),
+        ADDED(1),
+        DELETED(2);
+
+        private final int id;
+
+        Status(int id) {
+            this.id = id;
+        }
+
+        public int id() {
+            return id;
+        }
+
+        public static Status fromId(int id) {
+            switch (id) {
+                case 0:
+                    return EXISTING;
+                case 1:
+                    return ADDED;
+                case 2:
+                    return DELETED;
+            }
+            throw new IllegalArgumentException("Unknown manifest content: " + id);
+        }
+    }
+
+    private final Status status;
     private final long snapshotId;
     private final long sequenceNumber;
     private final long fileSequenceNumber;
-    private final IcebergDataFile dataFile;
+    private final IcebergDataFileMeta dataFile;
 
     public IcebergManifestEntry(
-            int status,
+            Status status,
             long snapshotId,
             long sequenceNumber,
             long fileSequenceNumber,
-            IcebergDataFile dataFile) {
+            IcebergDataFileMeta dataFile) {
         this.status = status;
         this.snapshotId = snapshotId;
         this.sequenceNumber = sequenceNumber;
@@ -48,8 +76,13 @@ public class IcebergManifestEntry {
         this.dataFile = dataFile;
     }
 
-    public int status() {
+    public Status status() {
         return status;
+    }
+
+    /** Returns whether this entry is live. */
+    public boolean isLive() {
+        return status() == Status.ADDED || status() == Status.EXISTING;
     }
 
     public long snapshotId() {
@@ -64,7 +97,7 @@ public class IcebergManifestEntry {
         return fileSequenceNumber;
     }
 
-    public IcebergDataFile dataFile() {
+    public IcebergDataFileMeta file() {
         return dataFile;
     }
 
@@ -74,7 +107,8 @@ public class IcebergManifestEntry {
         fields.add(new DataField(1, "snapshot_id", DataTypes.BIGINT()));
         fields.add(new DataField(3, "sequence_number", DataTypes.BIGINT()));
         fields.add(new DataField(4, "file_sequence_number", DataTypes.BIGINT()));
-        fields.add(new DataField(2, "data_file", IcebergDataFile.schema(partitionType).notNull()));
+        fields.add(
+                new DataField(2, "data_file", IcebergDataFileMeta.schema(partitionType).notNull()));
         return new RowType(fields);
     }
 

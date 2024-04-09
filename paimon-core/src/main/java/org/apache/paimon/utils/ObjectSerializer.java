@@ -116,5 +116,5 @@ public abstract class ObjectSerializer<T> implements Serializable {
     public abstract InternalRow toRow(T record);
 
     /** Convert a {@link InternalRow} to {@link T}. */
-    public abstract T fromRow(InternalRow rowData);
+    public abstract T fromRow(InternalRow row);
 }

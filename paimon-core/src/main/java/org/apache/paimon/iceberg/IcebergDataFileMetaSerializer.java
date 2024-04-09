@@ -25,20 +25,20 @@ import org.apache.paimon.data.serializer.InternalRowSerializer;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.ObjectSerializer;
 
-/** Serializer for {@link IcebergDataFile}. */
-public class IcebergDataFileSerializer extends ObjectSerializer<IcebergDataFile> {
+/** Serializer for {@link IcebergDataFileMeta}. */
+public class IcebergDataFileMetaSerializer extends ObjectSerializer<IcebergDataFileMeta> {
 
     private static final long serialVersionUID = 1L;
 
     private final InternalRowSerializer partSerializer;
 
-    public IcebergDataFileSerializer(RowType partitionType) {
-        super(IcebergDataFile.schema(partitionType));
+    public IcebergDataFileMetaSerializer(RowType partitionType) {
+        super(IcebergDataFileMeta.schema(partitionType));
         this.partSerializer = new InternalRowSerializer(partitionType);
     }
 
     @Override
-    public InternalRow toRow(IcebergDataFile file) {
+    public InternalRow toRow(IcebergDataFileMeta file) {
         return GenericRow.of(
                 file.content(),
                 BinaryString.fromString(file.filePath()),
@@ -50,8 +50,8 @@ public class IcebergDataFileSerializer extends ObjectSerializer<IcebergDataFile>
     }
 
     @Override
-    public IcebergDataFile fromRow(InternalRow row) {
-        return new IcebergDataFile(
+    public IcebergDataFileMeta fromRow(InternalRow row) {
+        return new IcebergDataFileMeta(
                 row.getInt(0),
                 row.getString(1).toString(),
                 row.getString(2).toString(),

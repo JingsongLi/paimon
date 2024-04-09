@@ -19,79 +19,59 @@
 package org.apache.paimon.iceberg;
 
 import org.apache.paimon.CoreOptions;
-import org.apache.paimon.annotation.VisibleForTesting;
+import org.apache.paimon.format.FieldStats;
 import org.apache.paimon.format.FileFormat;
 import org.apache.paimon.format.FormatReaderFactory;
 import org.apache.paimon.format.FormatWriterFactory;
 import org.apache.paimon.format.TableStatsCollector;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
-import org.apache.paimon.io.RollingFileWriter;
+import org.apache.paimon.iceberg.IcebergManifestFileMeta.Content;
 import org.apache.paimon.io.SingleFileWriter;
 import org.apache.paimon.manifest.ManifestEntry;
-import org.apache.paimon.manifest.ManifestEntrySerializer;
-import org.apache.paimon.manifest.ManifestFileMeta;
-import org.apache.paimon.manifest.SimpleFileEntry;
-import org.apache.paimon.manifest.SimpleFileEntrySerializer;
-import org.apache.paimon.schema.SchemaManager;
-import org.apache.paimon.stats.FieldStatsArraySerializer;
+import org.apache.paimon.types.DataType;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.FileStorePathFactory;
 import org.apache.paimon.utils.ObjectsFile;
 import org.apache.paimon.utils.PathFactory;
-import org.apache.paimon.utils.SegmentsCache;
-import org.apache.paimon.utils.VersionedObjectSerializer;
-
-import javax.annotation.Nullable;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+
+import static org.apache.paimon.iceberg.IcebergConversions.toByteBuffer;
+import static org.apache.paimon.iceberg.IcebergManifestFileMeta.PARTITION_SPEC_ID;
+import static org.apache.paimon.iceberg.IcebergManifestFileMeta.UNASSIGNED_SEQ;
 
 /**
- * This file includes several {@link ManifestEntry}s, representing the additional changes since last
- * snapshot.
+ * This file includes several iceberg {@link ManifestEntry}s, representing the additional changes
+ * since last snapshot.
  */
 public class IcebergManifestFile extends ObjectsFile<IcebergManifestEntry> {
 
-    private final SchemaManager schemaManager;
     private final RowType partitionType;
     private final FormatWriterFactory writerFactory;
-    private final long suggestedFileSize;
 
     private IcebergManifestFile(
             FileIO fileIO,
-            SchemaManager schemaManager,
             RowType partitionType,
             FormatReaderFactory readerFactory,
             FormatWriterFactory writerFactory,
-            PathFactory pathFactory,
-            long suggestedFileSize,
-            @Nullable SegmentsCache<String> cache) {
+            PathFactory pathFactory) {
         super(
                 fileIO,
                 new IcebergManifestEntrySerializer(partitionType),
                 readerFactory,
                 writerFactory,
                 pathFactory,
-                cache);
-        this.schemaManager = schemaManager;
+                null);
         this.partitionType = partitionType;
         this.writerFactory = writerFactory;
-        this.suggestedFileSize = suggestedFileSize;
     }
 
-    @VisibleForTesting
-    public long suggestedFileSize() {
-        return suggestedFileSize;
-    }
-
-    /**
-     * Write several {@link ManifestEntry}s into manifest files.
-     *
-     * <p>NOTE: This method is atomic.
-     */
-    public List<ManifestFileMeta> write(List<ManifestEntry> entries) {
-        RollingFileWriter<ManifestEntry, ManifestFileMeta> writer = createRollingWriter();
+    public IcebergManifestFileMeta write(List<IcebergManifestEntry> entries) throws IOException {
+        SingleFileWriter<IcebergManifestEntry, IcebergManifestFileMeta> writer = createWriter();
         try {
             writer.write(entries);
             writer.close();
@@ -101,67 +81,91 @@ public class IcebergManifestFile extends ObjectsFile<IcebergManifestEntry> {
         return writer.result();
     }
 
-    public RollingFileWriter<ManifestEntry, ManifestFileMeta> createRollingWriter() {
-        return new RollingFileWriter<>(
-                () ->
-                        new ManifestEntryWriter(
-                                writerFactory,
-                                pathFactory.newPath(),
-                                CoreOptions.FILE_COMPRESSION.defaultValue()),
-                suggestedFileSize);
+    public SingleFileWriter<IcebergManifestEntry, IcebergManifestFileMeta> createWriter() {
+        return new IcebergManifestEntryWriter(
+                writerFactory, pathFactory.newPath(), CoreOptions.FILE_COMPRESSION.defaultValue());
     }
 
-    private class ManifestEntryWriter extends SingleFileWriter<ManifestEntry, ManifestFileMeta> {
+    private class IcebergManifestEntryWriter
+            extends SingleFileWriter<IcebergManifestEntry, IcebergManifestFileMeta> {
 
         private final TableStatsCollector partitionStatsCollector;
-        private final FieldStatsArraySerializer partitionStatsSerializer;
 
-        private long numAddedFiles = 0;
-        private long numDeletedFiles = 0;
-        private long schemaId = Long.MIN_VALUE;
+        private long addedFilesCount = 0;
+        private long existingFilesCount = 0;
+        private long deletedFilesCount = 0;
+        private long addedRowsCount = 0;
+        private long existingRowsCount = 0;
+        private long deletedRowsCount = 0;
+        private Long minDataSequenceNumber = null;
 
-        ManifestEntryWriter(FormatWriterFactory factory, Path path, String fileCompression) {
+        IcebergManifestEntryWriter(FormatWriterFactory factory, Path path, String fileCompression) {
             super(
                     IcebergManifestFile.this.fileIO,
                     factory,
                     path,
                     serializer::toRow,
                     fileCompression);
-
             this.partitionStatsCollector = new TableStatsCollector(partitionType);
-            this.partitionStatsSerializer = new FieldStatsArraySerializer(partitionType);
         }
 
         @Override
-        public void write(ManifestEntry entry) throws IOException {
+        public void write(IcebergManifestEntry entry) throws IOException {
             super.write(entry);
 
-            switch (entry.kind()) {
-                case ADD:
-                    numAddedFiles++;
+            switch (entry.status()) {
+                case ADDED:
+                    addedFilesCount += 1;
+                    addedRowsCount += entry.file().recordCount();
                     break;
-                case DELETE:
-                    numDeletedFiles++;
+                case EXISTING:
+                    existingFilesCount += 1;
+                    existingRowsCount += entry.file().recordCount();
                     break;
-                default:
-                    throw new UnsupportedOperationException("Unknown entry kind: " + entry.kind());
+                case DELETED:
+                    deletedFilesCount += 1;
+                    deletedRowsCount += entry.file().recordCount();
+                    break;
             }
-            schemaId = Math.max(schemaId, entry.file().schemaId());
 
-            partitionStatsCollector.collect(entry.partition());
+            if (entry.isLive()
+                    && (minDataSequenceNumber == null
+                            || entry.sequenceNumber() < minDataSequenceNumber)) {
+                this.minDataSequenceNumber = entry.sequenceNumber();
+            }
+
+            partitionStatsCollector.collect(entry.file().partition());
         }
 
         @Override
-        public ManifestFileMeta result() throws IOException {
-            return new ManifestFileMeta(
-                    path.getName(),
+        public IcebergManifestFileMeta result() throws IOException {
+            FieldStats[] stats = partitionStatsCollector.extract();
+            List<IcebergPartitionSummary> partitionSummaries = new ArrayList<>();
+            for (int i = 0; i < stats.length; i++) {
+                FieldStats fieldStats = stats[i];
+                DataType type = partitionType.getTypeAt(i);
+                partitionSummaries.add(
+                        new IcebergPartitionSummary(
+                                Objects.requireNonNull(fieldStats.nullCount()) > 0,
+                                false, // TODO correct it?
+                                toByteBuffer(type, fieldStats.minValue()).array(),
+                                toByteBuffer(type, fieldStats.maxValue()).array()));
+            }
+            return new IcebergManifestFileMeta(
+                    path.toString(),
                     fileIO.getFileSize(path),
-                    numAddedFiles,
-                    numDeletedFiles,
-                    partitionStatsSerializer.toBinary(partitionStatsCollector.extract()),
-                    numAddedFiles + numDeletedFiles > 0
-                            ? schemaId
-                            : schemaManager.latest().get().id());
+                    PARTITION_SPEC_ID,
+                    Content.DATA,
+                    UNASSIGNED_SEQ,
+                    minDataSequenceNumber != null ? minDataSequenceNumber : UNASSIGNED_SEQ,
+                    null,
+                    addedFilesCount,
+                    existingFilesCount,
+                    deletedFilesCount,
+                    addedRowsCount,
+                    existingRowsCount,
+                    deletedRowsCount,
+                    partitionSummaries);
         }
     }
 
@@ -169,53 +173,29 @@ public class IcebergManifestFile extends ObjectsFile<IcebergManifestEntry> {
     public static class Factory {
 
         private final FileIO fileIO;
-        private final SchemaManager schemaManager;
         private final RowType partitionType;
         private final FileFormat fileFormat;
         private final FileStorePathFactory pathFactory;
-        private final long suggestedFileSize;
-        @Nullable private final SegmentsCache<String> cache;
 
         public Factory(
                 FileIO fileIO,
-                SchemaManager schemaManager,
                 RowType partitionType,
                 FileFormat fileFormat,
-                FileStorePathFactory pathFactory,
-                long suggestedFileSize,
-                @Nullable SegmentsCache<String> cache) {
+                FileStorePathFactory pathFactory) {
             this.fileIO = fileIO;
-            this.schemaManager = schemaManager;
             this.partitionType = partitionType;
             this.fileFormat = fileFormat;
             this.pathFactory = pathFactory;
-            this.suggestedFileSize = suggestedFileSize;
-            this.cache = cache;
         }
 
         public IcebergManifestFile create() {
-            RowType entryType = VersionedObjectSerializer.versionType(ManifestEntry.schema());
+            RowType entryType = IcebergManifestEntry.schema(partitionType);
             return new IcebergManifestFile(
                     fileIO,
-                    schemaManager,
                     partitionType,
-                    new ManifestEntrySerializer(),
                     fileFormat.createReaderFactory(entryType),
                     fileFormat.createWriterFactory(entryType),
-                    pathFactory.manifestFileFactory(),
-                    suggestedFileSize,
-                    cache);
-        }
-
-        public ObjectsFile<SimpleFileEntry> createSimpleFileEntryReader() {
-            RowType entryType = VersionedObjectSerializer.versionType(ManifestEntry.schema());
-            return new ObjectsFile<>(
-                    fileIO,
-                    new SimpleFileEntrySerializer(),
-                    fileFormat.createReaderFactory(entryType),
-                    fileFormat.createWriterFactory(entryType),
-                    pathFactory.manifestFileFactory(),
-                    cache);
+                    pathFactory.manifestFileFactory());
         }
     }
 }

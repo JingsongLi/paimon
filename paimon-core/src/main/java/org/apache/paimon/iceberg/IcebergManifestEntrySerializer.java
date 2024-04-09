@@ -20,6 +20,7 @@ package org.apache.paimon.iceberg;
 
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.iceberg.IcebergManifestEntry.Status;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.ObjectSerializer;
 
@@ -28,27 +29,27 @@ public class IcebergManifestEntrySerializer extends ObjectSerializer<IcebergMani
 
     private static final long serialVersionUID = 1L;
 
-    private final IcebergDataFileSerializer fileSerializer;
+    private final IcebergDataFileMetaSerializer fileSerializer;
 
     public IcebergManifestEntrySerializer(RowType partitionType) {
         super(IcebergManifestEntry.schema(partitionType));
-        this.fileSerializer = new IcebergDataFileSerializer(partitionType);
+        this.fileSerializer = new IcebergDataFileMetaSerializer(partitionType);
     }
 
     @Override
     public InternalRow toRow(IcebergManifestEntry entry) {
         return GenericRow.of(
-                entry.status(),
+                entry.status().id(),
                 entry.snapshotId(),
                 entry.sequenceNumber(),
                 entry.fileSequenceNumber(),
-                fileSerializer.toRow(entry.dataFile()));
+                fileSerializer.toRow(entry.file()));
     }
 
     @Override
     public IcebergManifestEntry fromRow(InternalRow row) {
         return new IcebergManifestEntry(
-                row.getInt(0),
+                Status.fromId(row.getInt(0)),
                 row.getLong(1),
                 row.getLong(2),
                 row.getLong(3),
