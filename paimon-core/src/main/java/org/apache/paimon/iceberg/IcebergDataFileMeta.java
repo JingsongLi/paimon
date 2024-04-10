@@ -30,7 +30,6 @@ import java.util.Objects;
 /** Iceberg data file meta. */
 public class IcebergDataFileMeta {
 
-    private final int content;
     private final String filePath;
     private final String fileFormat;
     private final int specId;
@@ -39,24 +38,18 @@ public class IcebergDataFileMeta {
     private final long fileSizeInBytes;
 
     public IcebergDataFileMeta(
-            int content,
             String filePath,
             String fileFormat,
             int specId,
             BinaryRow partition,
             long recordCount,
             long fileSizeInBytes) {
-        this.content = content;
         this.filePath = filePath;
         this.fileFormat = fileFormat;
         this.specId = specId;
         this.partition = partition;
         this.recordCount = recordCount;
         this.fileSizeInBytes = fileSizeInBytes;
-    }
-
-    public int content() {
-        return content;
     }
 
     public String filePath() {
@@ -85,7 +78,6 @@ public class IcebergDataFileMeta {
 
     public static RowType schema(RowType partitionType) {
         List<DataField> fields = new ArrayList<>();
-        fields.add(new DataField(134, "content", DataTypes.STRING()));
         fields.add(new DataField(100, "file_path", DataTypes.STRING().notNull()));
         fields.add(new DataField(101, "file_format", DataTypes.STRING().notNull()));
         fields.add(new DataField(102, "partition", partitionType));
@@ -103,8 +95,7 @@ public class IcebergDataFileMeta {
             return false;
         }
         IcebergDataFileMeta that = (IcebergDataFileMeta) o;
-        return content == that.content
-                && specId == that.specId
+        return specId == that.specId
                 && recordCount == that.recordCount
                 && fileSizeInBytes == that.fileSizeInBytes
                 && Objects.equals(filePath, that.filePath)
@@ -114,7 +105,6 @@ public class IcebergDataFileMeta {
 
     @Override
     public int hashCode() {
-        return Objects.hash(
-                content, filePath, fileFormat, specId, partition, recordCount, fileSizeInBytes);
+        return Objects.hash(filePath, fileFormat, specId, partition, recordCount, fileSizeInBytes);
     }
 }

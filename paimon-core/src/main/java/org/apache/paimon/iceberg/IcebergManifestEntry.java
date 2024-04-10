@@ -59,20 +59,11 @@ public class IcebergManifestEntry {
 
     private final Status status;
     private final long snapshotId;
-    private final long sequenceNumber;
-    private final long fileSequenceNumber;
     private final IcebergDataFileMeta dataFile;
 
-    public IcebergManifestEntry(
-            Status status,
-            long snapshotId,
-            long sequenceNumber,
-            long fileSequenceNumber,
-            IcebergDataFileMeta dataFile) {
+    public IcebergManifestEntry(Status status, long snapshotId, IcebergDataFileMeta dataFile) {
         this.status = status;
         this.snapshotId = snapshotId;
-        this.sequenceNumber = sequenceNumber;
-        this.fileSequenceNumber = fileSequenceNumber;
         this.dataFile = dataFile;
     }
 
@@ -80,21 +71,8 @@ public class IcebergManifestEntry {
         return status;
     }
 
-    /** Returns whether this entry is live. */
-    public boolean isLive() {
-        return status() == Status.ADDED || status() == Status.EXISTING;
-    }
-
     public long snapshotId() {
         return snapshotId;
-    }
-
-    public long sequenceNumber() {
-        return sequenceNumber;
-    }
-
-    public long fileSequenceNumber() {
-        return fileSequenceNumber;
     }
 
     public IcebergDataFileMeta file() {
@@ -105,8 +83,6 @@ public class IcebergManifestEntry {
         List<DataField> fields = new ArrayList<>();
         fields.add(new DataField(0, "status", DataTypes.INT().notNull()));
         fields.add(new DataField(1, "snapshot_id", DataTypes.BIGINT()));
-        fields.add(new DataField(3, "sequence_number", DataTypes.BIGINT()));
-        fields.add(new DataField(4, "file_sequence_number", DataTypes.BIGINT()));
         fields.add(
                 new DataField(2, "data_file", IcebergDataFileMeta.schema(partitionType).notNull()));
         return new RowType(fields);
@@ -123,13 +99,11 @@ public class IcebergManifestEntry {
         IcebergManifestEntry that = (IcebergManifestEntry) o;
         return status == that.status
                 && snapshotId == that.snapshotId
-                && sequenceNumber == that.sequenceNumber
-                && fileSequenceNumber == that.fileSequenceNumber
                 && Objects.equals(dataFile, that.dataFile);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(status, snapshotId, sequenceNumber, fileSequenceNumber, dataFile);
+        return Objects.hash(status, snapshotId, dataFile);
     }
 }

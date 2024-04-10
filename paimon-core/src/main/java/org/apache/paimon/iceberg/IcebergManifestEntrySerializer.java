@@ -39,11 +39,7 @@ public class IcebergManifestEntrySerializer extends ObjectSerializer<IcebergMani
     @Override
     public InternalRow toRow(IcebergManifestEntry entry) {
         return GenericRow.of(
-                entry.status().id(),
-                entry.snapshotId(),
-                entry.sequenceNumber(),
-                entry.fileSequenceNumber(),
-                fileSerializer.toRow(entry.file()));
+                entry.status().id(), entry.snapshotId(), fileSerializer.toRow(entry.file()));
     }
 
     @Override
@@ -51,8 +47,6 @@ public class IcebergManifestEntrySerializer extends ObjectSerializer<IcebergMani
         return new IcebergManifestEntry(
                 Status.fromId(row.getInt(0)),
                 row.getLong(1),
-                row.getLong(2),
-                row.getLong(3),
-                fileSerializer.fromRow(row.getRow(4, fileSerializer.numFields())));
+                fileSerializer.fromRow(row.getRow(2, fileSerializer.numFields())));
     }
 }

@@ -40,7 +40,6 @@ public class IcebergDataFileMetaSerializer extends ObjectSerializer<IcebergDataF
     @Override
     public InternalRow toRow(IcebergDataFileMeta file) {
         return GenericRow.of(
-                file.content(),
                 BinaryString.fromString(file.filePath()),
                 BinaryString.fromString(file.fileFormat()),
                 file.specId(),
@@ -52,12 +51,11 @@ public class IcebergDataFileMetaSerializer extends ObjectSerializer<IcebergDataF
     @Override
     public IcebergDataFileMeta fromRow(InternalRow row) {
         return new IcebergDataFileMeta(
-                row.getInt(0),
+                row.getString(0).toString(),
                 row.getString(1).toString(),
-                row.getString(2).toString(),
-                row.getInt(3),
-                partSerializer.toBinaryRow(row.getRow(4, partSerializer.getArity())).copy(),
-                row.getLong(5),
-                row.getLong(6));
+                row.getInt(2),
+                partSerializer.toBinaryRow(row.getRow(3, partSerializer.getArity())).copy(),
+                row.getLong(4),
+                row.getLong(5));
     }
 }

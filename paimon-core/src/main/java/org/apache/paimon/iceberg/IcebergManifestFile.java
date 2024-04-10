@@ -97,7 +97,6 @@ public class IcebergManifestFile extends ObjectsFile<IcebergManifestEntry> {
         private long addedRowsCount = 0;
         private long existingRowsCount = 0;
         private long deletedRowsCount = 0;
-        private Long minDataSequenceNumber = null;
 
         IcebergManifestEntryWriter(FormatWriterFactory factory, Path path, String fileCompression) {
             super(
@@ -128,12 +127,6 @@ public class IcebergManifestFile extends ObjectsFile<IcebergManifestEntry> {
                     break;
             }
 
-            if (entry.isLive()
-                    && (minDataSequenceNumber == null
-                            || entry.sequenceNumber() < minDataSequenceNumber)) {
-                this.minDataSequenceNumber = entry.sequenceNumber();
-            }
-
             partitionStatsCollector.collect(entry.file().partition());
         }
 
@@ -157,7 +150,7 @@ public class IcebergManifestFile extends ObjectsFile<IcebergManifestEntry> {
                     PARTITION_SPEC_ID,
                     Content.DATA,
                     UNASSIGNED_SEQ,
-                    minDataSequenceNumber != null ? minDataSequenceNumber : UNASSIGNED_SEQ,
+                    UNASSIGNED_SEQ,
                     null,
                     addedFilesCount,
                     existingFilesCount,
