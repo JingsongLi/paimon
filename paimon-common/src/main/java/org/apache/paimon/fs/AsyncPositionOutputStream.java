@@ -40,7 +40,7 @@ public class AsyncPositionOutputStream extends PositionOutputStream {
             Executors.newCachedThreadPool(newDaemonThreadFactory("AsyncOutputStream"));
 
     public static final int AWAIT_TIMEOUT_SECONDS = 10;
-    public static final int BUFFER_SIZE = 1024 * 32;
+    public static final int BUFFER_SIZE = 1024 * 64;
     public static final int MAX_BUFFER = 1024;
 
     private final PositionOutputStream out;
@@ -110,19 +110,25 @@ public class AsyncPositionOutputStream extends PositionOutputStream {
         return position;
     }
 
-    private void flushBuffer() {
+    private void flushBuffer() throws IOException {
         if (buffer.getCount() == 0) {
             return;
         }
         putEvent(new DataEvent(buffer.getBuffer(), buffer.getCount()));
         byte[] byteArray;
         if (totalBuffers > MAX_BUFFER) {
-            try {
-                byteArray = bufferQueue.take();
-            } catch (InterruptedException e) {
-                sendEndEvent();
-                Thread.currentThread().interrupt();
-                throw new RuntimeException(e);
+            while (true) {
+                checkException();
+                try {
+                    byteArray = bufferQueue.poll(AWAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    if (byteArray != null) {
+                        break;
+                    }
+                } catch (InterruptedException e) {
+                    sendEndEvent();
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
             }
         } else {
             byteArray = bufferQueue.poll();
