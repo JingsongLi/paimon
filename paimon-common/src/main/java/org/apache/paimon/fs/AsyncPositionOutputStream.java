@@ -116,7 +116,7 @@ public class AsyncPositionOutputStream extends PositionOutputStream {
         }
         putEvent(new DataEvent(buffer.getBuffer(), buffer.getCount()));
         byte[] byteArray;
-        if (totalBuffers > MAX_BUFFER) {
+        if (totalBuffers >= MAX_BUFFER) {
             while (true) {
                 checkException();
                 try {
@@ -184,6 +184,7 @@ public class AsyncPositionOutputStream extends PositionOutputStream {
                 }
                 checkException();
             } catch (InterruptedException e) {
+                sendEndEvent();
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
             }
