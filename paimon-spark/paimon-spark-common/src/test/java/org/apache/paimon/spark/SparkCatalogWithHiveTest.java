@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Base tests for spark read. */
 public class SparkCatalogWithHiveTest {
+
     private static TestHiveMetastore testHiveMetastore;
 
     private static final int PORT = 9087;
@@ -64,7 +65,6 @@ public class SparkCatalogWithHiveTest {
                         .config(
                                 "spark.sql.catalog.spark_catalog.hive.metastore.uris",
                                 "thrift://localhost:" + PORT)
-                        .config("spark.sql.catalog.spark_catalog.format-table.enabled", "true")
                         .config(
                                 "spark.sql.catalog.spark_catalog.warehouse",
                                 warehousePath.toString())
@@ -93,7 +93,6 @@ public class SparkCatalogWithHiveTest {
                         .config(
                                 "spark.sql.catalog.spark_catalog.hive.metastore.uris",
                                 "thrift://localhost:" + PORT)
-                        .config("spark.sql.catalog.spark_catalog.format-table.enabled", "true")
                         .config(
                                 "spark.sql.catalog.spark_catalog.warehouse",
                                 warehousePath.toString())
