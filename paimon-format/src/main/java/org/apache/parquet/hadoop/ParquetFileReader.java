@@ -18,12 +18,15 @@
 
 package org.apache.parquet.hadoop;
 
-import org.apache.paimon.fileindex.FileIndexResult;
-import org.apache.paimon.fileindex.bitmap.BitmapIndexResult;
 import org.apache.paimon.format.parquet.ParquetInputFile;
 import org.apache.paimon.format.parquet.ParquetInputStream;
 import org.apache.paimon.fs.FileRange;
 import org.apache.paimon.fs.VectoredReadable;
+import org.apache.paimon.utils.BiIntConsumer;
+import org.apache.paimon.utils.IntPair;
+import org.apache.paimon.utils.LazyField;
+import org.apache.paimon.utils.Pair;
+import org.apache.paimon.utils.Range;
 import org.apache.paimon.utils.RoaringBitmap32;
 
 import org.apache.hadoop.fs.Path;
@@ -35,7 +38,6 @@ import org.apache.parquet.column.page.DataPage;
 import org.apache.parquet.column.page.DataPageV1;
 import org.apache.parquet.column.page.DataPageV2;
 import org.apache.parquet.column.page.DictionaryPage;
-import org.apache.parquet.column.page.DictionaryPageReadStore;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.column.values.bloomfilter.BlockSplitBloomFilter;
 import org.apache.parquet.column.values.bloomfilter.BloomFilter;
@@ -65,25 +67,21 @@ import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.hadoop.metadata.FileMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.hadoop.util.counters.BenchmarkCounter;
-import org.apache.parquet.internal.column.columnindex.ColumnIndex;
 import org.apache.parquet.internal.column.columnindex.OffsetIndex;
 import org.apache.parquet.internal.filter2.columnindex.ColumnIndexFilter;
 import org.apache.parquet.internal.filter2.columnindex.ColumnIndexStore;
 import org.apache.parquet.internal.filter2.columnindex.RowRanges;
-import org.apache.parquet.internal.hadoop.metadata.IndexReference;
 import org.apache.parquet.io.InputFile;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.SeekableInputStream;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
-import org.apache.yetus.audience.InterfaceAudience.Private;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.SequenceInputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -92,9 +90,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.zip.CRC32;
 
@@ -117,6 +115,8 @@ import static org.apache.parquet.hadoop.ParquetFileWriter.MAGIC;
 public class ParquetFileReader implements Closeable {
 
     private static final Logger LOG = LoggerFactory.getLogger(ParquetFileReader.class);
+
+    private static final int SKIP_MIN_BATCH = 1024;
 
     private final ParquetMetadataConverter converter;
 
@@ -228,15 +228,16 @@ public class ParquetFileReader implements Closeable {
     private ColumnChunkPageReadStore currentRowGroup = null;
     private DictionaryPageReader nextDictionaryReader = null;
 
-    private InternalFileDecryptor fileDecryptor = null;
-    private FileIndexResult fileIndexResult;
+    private InternalFileDecryptor fileDecryptor;
+
+    private final LazyField<RoaringBitmap32> selectRows;
 
     public ParquetFileReader(
-            InputFile file, ParquetReadOptions options, FileIndexResult fileIndexResult)
+            InputFile file, ParquetReadOptions options, LazyField<RoaringBitmap32> selectRows)
             throws IOException {
         this.converter = new ParquetMetadataConverter(options);
         this.file = (ParquetInputFile) file;
-        this.fileIndexResult = fileIndexResult;
+        this.selectRows = selectRows;
         this.f = this.file.newStream();
         this.options = options;
         try {
@@ -339,7 +340,7 @@ public class ParquetFileReader implements Closeable {
         return file.toString();
     }
 
-    private List<BlockMetaData> filterRowGroups(List<BlockMetaData> blocks) throws IOException {
+    private List<BlockMetaData> filterRowGroups(List<BlockMetaData> blocks) {
         FilterCompat.Filter recordFilter = options.getRecordFilter();
         if (checkRowIndexOffsetExists(blocks)) {
             if (FilterCompat.isFilteringRequired(recordFilter)) {
@@ -359,18 +360,19 @@ public class ParquetFileReader implements Closeable {
                 }
                 blocks = RowGroupFilter.filterRowGroups(levels, recordFilter, blocks, this);
             }
-            if (fileIndexResult instanceof BitmapIndexResult) {
-                RoaringBitmap32 bitmap = ((BitmapIndexResult) fileIndexResult).get();
+
+            RoaringBitmap32 bitmap = selectRows.get();
+            if (bitmap != null) {
+                Predicate<BlockMetaData> predicate = it -> {
+                    long rowIndexOffset = it.getRowIndexOffset();
+                    return bitmap.rangeCardinality(
+                            rowIndexOffset,
+                            rowIndexOffset + it.getRowCount())
+                            > 0;
+                };
                 blocks =
                         blocks.stream()
-                                .filter(
-                                        it -> {
-                                            long rowIndexOffset = it.getRowIndexOffset();
-                                            return bitmap.rangeCardinality(
-                                                            rowIndexOffset,
-                                                            rowIndexOffset + it.getRowCount())
-                                                    > 0;
-                                        })
+                                .filter(predicate)
                                 .collect(Collectors.toList());
             }
         }
@@ -382,30 +384,11 @@ public class ParquetFileReader implements Closeable {
         return blocksFiltered;
     }
 
-    public List<BlockMetaData> getRowGroups() {
-        return blocks;
-    }
-
     public void setRequestedSchema(MessageType projection) {
         paths.clear();
         for (ColumnDescriptor col : projection.getColumns()) {
             paths.put(ColumnPath.get(col.getPath()), col);
         }
-    }
-
-    public void appendTo(ParquetFileWriter writer) throws IOException {
-        writer.appendRowGroups(f, blocks, true);
-    }
-
-    /**
-     * Reads all the columns requested from the row group at the specified block.
-     *
-     * @param blockIndex the index of the requested block
-     * @throws IOException if an error occurs while reading
-     * @return the PageReadStore which can provide PageReaders for each column.
-     */
-    public PageReadStore readRowGroup(int blockIndex) throws IOException {
-        return internalReadRowGroup(blockIndex);
     }
 
     /**
@@ -415,7 +398,7 @@ public class ParquetFileReader implements Closeable {
      * @return the PageReadStore which can provide PageReaders for each column.
      */
     public PageReadStore readNextRowGroup() throws IOException {
-        ColumnChunkPageReadStore rowGroup = null;
+        ColumnChunkPageReadStore rowGroup;
         try {
             rowGroup = internalReadRowGroup(currentBlock);
         } catch (ParquetEmptyBlockException e) {
@@ -474,84 +457,6 @@ public class ParquetFileReader implements Closeable {
         }
 
         return rowGroup;
-    }
-
-    /**
-     * Reads all the columns requested from the specified row group. It may skip specific pages
-     * based on the column indexes according to the actual filter. As the rows are not aligned among
-     * the pages of the different columns row synchronization might be required. See the
-     * documentation of the class SynchronizingColumnReader for details.
-     *
-     * @param blockIndex the index of the requested block
-     * @return the PageReadStore which can provide PageReaders for each column or null if there are
-     *     no rows in this block
-     * @throws IOException if an error occurs while reading
-     */
-    public PageReadStore readFilteredRowGroup(int blockIndex) throws IOException {
-        if (blockIndex < 0 || blockIndex >= blocks.size()) {
-            return null;
-        }
-
-        // Filtering not required -> fall back to the non-filtering path
-        if (!options.useColumnIndexFilter()
-                || !FilterCompat.isFilteringRequired(options.getRecordFilter())) {
-            return internalReadRowGroup(blockIndex);
-        }
-
-        BlockMetaData block = blocks.get(blockIndex);
-        if (block.getRowCount() == 0) {
-            throw new ParquetEmptyBlockException("Illegal row group of 0 rows");
-        }
-
-        RowRanges rowRanges = getRowRanges(blockIndex);
-        return readFilteredRowGroup(blockIndex, rowRanges);
-    }
-
-    /**
-     * Reads all the columns requested from the specified row group. It may skip specific pages
-     * based on the {@code rowRanges} passed in. As the rows are not aligned among the pages of the
-     * different columns row synchronization might be required. See the documentation of the class
-     * SynchronizingColumnReader for details.
-     *
-     * @param blockIndex the index of the requested block
-     * @param rowRanges the row ranges to be read from the requested block
-     * @return the PageReadStore which can provide PageReaders for each column or null if there are
-     *     no rows in this block
-     * @throws IOException if an error occurs while reading
-     * @throws IllegalArgumentException if the {@code blockIndex} is invalid or the {@code
-     *     rowRanges} is null
-     */
-    public ColumnChunkPageReadStore readFilteredRowGroup(int blockIndex, RowRanges rowRanges)
-            throws IOException {
-        if (blockIndex < 0 || blockIndex >= blocks.size()) {
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Invalid block index %s, the valid block index range are: "
-                                    + "[%s, %s]",
-                            blockIndex, 0, blocks.size() - 1));
-        }
-
-        if (Objects.isNull(rowRanges)) {
-            throw new IllegalArgumentException("RowRanges must not be null");
-        }
-
-        BlockMetaData block = blocks.get(blockIndex);
-        if (block.getRowCount() == 0L) {
-            return null;
-        }
-
-        long rowCount = rowRanges.rowCount();
-        if (rowCount == 0) {
-            // There are no matching rows -> returning null
-            return null;
-        }
-
-        if (rowCount == block.getRowCount()) {
-            // All rows are matching -> fall back to the non-filtering path
-            return internalReadRowGroup(blockIndex);
-        }
-
-        return internalReadFilteredRowGroup(block, rowRanges, getColumnIndexStore(blockIndex));
     }
 
     /**
@@ -755,165 +660,38 @@ public class ParquetFileReader implements Closeable {
                 : "Should not be invoked if filter is null or NOOP";
         RowRanges rowRanges = blockRowRanges.get(blockIndex);
         if (rowRanges == null) {
+            ColumnIndexStore columnIndexStore = getColumnIndexStore(blockIndex);
+            BlockMetaData block = blocks.get(blockIndex);
+            long rowCount = block.getRowCount();
             rowRanges =
                     ColumnIndexFilter.calculateRowRanges(
                             options.getRecordFilter(),
-                            getColumnIndexStore(blockIndex),
+                            columnIndexStore,
                             paths.keySet(),
-                            blocks.get(blockIndex).getRowCount());
+                            rowCount);
+            RoaringBitmap32 bitmap = selectRows.get();
+            if (bitmap != null) {
+                List<Range> absentRanges = new ArrayList<>();
+                bitmap.findRangeAbsent((int) block.getRowIndexOffset(), (int) rowCount, range -> {
+                    if (range.getEnd() - range.getStart() >= SKIP_MIN_BATCH) {
+                        absentRanges.add(range);
+                    }
+                });
+                // TODO
+            }
             blockRowRanges.set(blockIndex, rowRanges);
         }
         return rowRanges;
     }
 
-    public boolean skipNextRowGroup() {
-        return advanceToNextBlock();
-    }
-
-    private boolean advanceToNextBlock() {
+    private void advanceToNextBlock() {
         if (currentBlock == blocks.size()) {
-            return false;
+            return;
         }
 
         // update the current block and instantiate a dictionary reader for it
         ++currentBlock;
         this.nextDictionaryReader = null;
-
-        return true;
-    }
-
-    /**
-     * Returns a {@link DictionaryPageReadStore} for the row group that would be returned by calling
-     * {@link #readNextRowGroup()} or skipped by calling {@link #skipNextRowGroup()}.
-     *
-     * @return a DictionaryPageReadStore for the next row group
-     */
-    public DictionaryPageReadStore getNextDictionaryReader() {
-        if (nextDictionaryReader == null) {
-            this.nextDictionaryReader = getDictionaryReader(currentBlock);
-        }
-        return nextDictionaryReader;
-    }
-
-    public DictionaryPageReader getDictionaryReader(int blockIndex) {
-        if (blockIndex < 0 || blockIndex >= blocks.size()) {
-            return null;
-        }
-        return new DictionaryPageReader(this, blocks.get(blockIndex));
-    }
-
-    public DictionaryPageReader getDictionaryReader(BlockMetaData block) {
-        return new DictionaryPageReader(this, block);
-    }
-
-    /**
-     * Reads and decompresses a dictionary page for the given column chunk.
-     *
-     * <p>Returns null if the given column chunk has no dictionary page.
-     *
-     * @param meta a column's ColumnChunkMetaData to read the dictionary from
-     * @return an uncompressed DictionaryPage or null
-     * @throws IOException if there is an error while reading the dictionary
-     */
-    DictionaryPage readDictionary(ColumnChunkMetaData meta) throws IOException {
-        if (!meta.hasDictionaryPage()) {
-            return null;
-        }
-
-        // TODO: this should use getDictionaryPageOffset() but it isn't reliable.
-        if (f.getPos() != meta.getStartingPos()) {
-            f.seek(meta.getStartingPos());
-        }
-
-        boolean encryptedColumn = false;
-        InternalColumnDecryptionSetup columnDecryptionSetup = null;
-        byte[] dictionaryPageAAD = null;
-        BlockCipher.Decryptor pageDecryptor = null;
-        if (null != fileDecryptor && !fileDecryptor.plaintextFile()) {
-            columnDecryptionSetup = fileDecryptor.getColumnSetup(meta.getPath());
-            if (columnDecryptionSetup.isEncrypted()) {
-                encryptedColumn = true;
-            }
-        }
-
-        PageHeader pageHeader;
-        if (!encryptedColumn) {
-            pageHeader = Util.readPageHeader(f);
-        } else {
-            byte[] dictionaryPageHeaderAAD =
-                    AesCipher.createModuleAAD(
-                            fileDecryptor.getFileAAD(),
-                            ModuleType.DictionaryPageHeader,
-                            meta.getRowGroupOrdinal(),
-                            columnDecryptionSetup.getOrdinal(),
-                            -1);
-            pageHeader =
-                    Util.readPageHeader(
-                            f,
-                            columnDecryptionSetup.getMetaDataDecryptor(),
-                            dictionaryPageHeaderAAD);
-            dictionaryPageAAD =
-                    AesCipher.createModuleAAD(
-                            fileDecryptor.getFileAAD(),
-                            ModuleType.DictionaryPage,
-                            meta.getRowGroupOrdinal(),
-                            columnDecryptionSetup.getOrdinal(),
-                            -1);
-            pageDecryptor = columnDecryptionSetup.getDataDecryptor();
-        }
-
-        if (!pageHeader.isSetDictionary_page_header()) {
-            return null; // TODO: should this complain?
-        }
-
-        DictionaryPage compressedPage =
-                readCompressedDictionary(pageHeader, f, pageDecryptor, dictionaryPageAAD);
-        BytesInputDecompressor decompressor =
-                options.getCodecFactory().getDecompressor(meta.getCodec());
-
-        return new DictionaryPage(
-                decompressor.decompress(
-                        compressedPage.getBytes(), compressedPage.getUncompressedSize()),
-                compressedPage.getDictionarySize(),
-                compressedPage.getEncoding());
-    }
-
-    private DictionaryPage readCompressedDictionary(
-            PageHeader pageHeader,
-            SeekableInputStream fin,
-            BlockCipher.Decryptor pageDecryptor,
-            byte[] dictionaryPageAAD)
-            throws IOException {
-        DictionaryPageHeader dictHeader = pageHeader.getDictionary_page_header();
-
-        int uncompressedPageSize = pageHeader.getUncompressed_page_size();
-        int compressedPageSize = pageHeader.getCompressed_page_size();
-
-        byte[] dictPageBytes = new byte[compressedPageSize];
-        fin.readFully(dictPageBytes);
-
-        BytesInput bin = BytesInput.from(dictPageBytes);
-
-        if (null != pageDecryptor) {
-            bin = BytesInput.from(pageDecryptor.decrypt(bin.toByteArray(), dictionaryPageAAD));
-        }
-
-        return new DictionaryPage(
-                bin,
-                uncompressedPageSize,
-                dictHeader.getNum_values(),
-                converter.getEncoding(dictHeader.getEncoding()));
-    }
-
-    public BloomFilterReader getBloomFilterDataReader(int blockIndex) {
-        if (blockIndex < 0 || blockIndex >= blocks.size()) {
-            return null;
-        }
-        return new BloomFilterReader(this, blocks.get(blockIndex));
-    }
-
-    public BloomFilterReader getBloomFilterDataReader(BlockMetaData block) {
-        return new BloomFilterReader(this, block);
     }
 
     /**
@@ -999,73 +777,6 @@ public class ParquetFileReader implements Closeable {
         return new BlockSplitBloomFilter(bitset);
     }
 
-    /**
-     * @param column the column chunk which the column index is to be returned for
-     * @return the column index for the specified column chunk or {@code null} if there is no index
-     * @throws IOException if any I/O error occurs during reading the file
-     */
-    @Private
-    public ColumnIndex readColumnIndex(ColumnChunkMetaData column) throws IOException {
-        IndexReference ref = column.getColumnIndexReference();
-        if (ref == null) {
-            return null;
-        }
-        f.seek(ref.getOffset());
-
-        BlockCipher.Decryptor columnIndexDecryptor = null;
-        byte[] columnIndexAAD = null;
-        if (null != fileDecryptor && !fileDecryptor.plaintextFile()) {
-            InternalColumnDecryptionSetup columnDecryptionSetup =
-                    fileDecryptor.getColumnSetup(column.getPath());
-            if (columnDecryptionSetup.isEncrypted()) {
-                columnIndexDecryptor = columnDecryptionSetup.getMetaDataDecryptor();
-                columnIndexAAD =
-                        AesCipher.createModuleAAD(
-                                fileDecryptor.getFileAAD(),
-                                ModuleType.ColumnIndex,
-                                column.getRowGroupOrdinal(),
-                                columnDecryptionSetup.getOrdinal(),
-                                -1);
-            }
-        }
-        return ParquetMetadataConverter.fromParquetColumnIndex(
-                column.getPrimitiveType(),
-                Util.readColumnIndex(f, columnIndexDecryptor, columnIndexAAD));
-    }
-
-    /**
-     * @param column the column chunk which the offset index is to be returned for
-     * @return the offset index for the specified column chunk or {@code null} if there is no index
-     * @throws IOException if any I/O error occurs during reading the file
-     */
-    @Private
-    public OffsetIndex readOffsetIndex(ColumnChunkMetaData column) throws IOException {
-        IndexReference ref = column.getOffsetIndexReference();
-        if (ref == null) {
-            return null;
-        }
-        f.seek(ref.getOffset());
-
-        BlockCipher.Decryptor offsetIndexDecryptor = null;
-        byte[] offsetIndexAAD = null;
-        if (null != fileDecryptor && !fileDecryptor.plaintextFile()) {
-            InternalColumnDecryptionSetup columnDecryptionSetup =
-                    fileDecryptor.getColumnSetup(column.getPath());
-            if (columnDecryptionSetup.isEncrypted()) {
-                offsetIndexDecryptor = columnDecryptionSetup.getMetaDataDecryptor();
-                offsetIndexAAD =
-                        AesCipher.createModuleAAD(
-                                fileDecryptor.getFileAAD(),
-                                ModuleType.OffsetIndex,
-                                column.getRowGroupOrdinal(),
-                                columnDecryptionSetup.getOrdinal(),
-                                -1);
-            }
-        }
-        return ParquetMetadataConverter.fromParquetOffsetIndex(
-                Util.readOffsetIndex(f, offsetIndexDecryptor, offsetIndexAAD));
-    }
-
     @Override
     public void close() throws IOException {
         try {
@@ -1147,10 +858,6 @@ public class ParquetFileReader implements Closeable {
             this.stream = ByteBufferInputStream.wrap(buffers);
             this.offsetIndex = offsetIndex;
             this.rowCount = rowCount;
-        }
-
-        protected PageHeader readPageHeader() throws IOException {
-            return readPageHeader(null, null);
         }
 
         protected PageHeader readPageHeader(
@@ -1391,30 +1098,6 @@ public class ParquetFileReader implements Closeable {
                 long rowCount) {
             super(descriptor, buffers, offsetIndex, rowCount);
             this.f = f;
-        }
-
-        protected PageHeader readPageHeader() throws IOException {
-            PageHeader pageHeader;
-            stream.mark(8192); // headers should not be larger than 8k
-            try {
-                pageHeader = Util.readPageHeader(stream);
-            } catch (IOException e) {
-                // this is to workaround a bug where the compressedLength
-                // of the chunk is missing the size of the header of the dictionary
-                // to allow reading older files (using dictionary) we need this.
-                // usually 13 to 19 bytes are missing
-                // if the last page is smaller than this, the page header itself is truncated in the
-                // buffer.
-                stream.reset(); // resetting the buffer to the position before we got the error
-                LOG.info("completing the column chunk to read the page header");
-                pageHeader =
-                        Util.readPageHeader(
-                                new SequenceInputStream(
-                                        stream,
-                                        f)); // trying again from the buffer + remainder of the
-                // stream.
-            }
-            return pageHeader;
         }
 
         public BytesInput readAsBytesInput(int size) throws IOException {

@@ -18,12 +18,13 @@
 
 package org.apache.paimon.format.parquet;
 
-import org.apache.paimon.fileindex.FileIndexResult;
 import org.apache.paimon.format.SimpleStatsExtractor;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.types.DataField;
+import org.apache.paimon.utils.LazyField;
 import org.apache.paimon.utils.Pair;
+import org.apache.paimon.utils.RoaringBitmap32;
 
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.column.statistics.Statistics;
@@ -49,7 +50,7 @@ public class ParquetUtil {
      */
     public static Pair<Map<String, Statistics<?>>, SimpleStatsExtractor.FileInfo>
             extractColumnStats(FileIO fileIO, Path path) throws IOException {
-        try (ParquetFileReader reader = getParquetReader(fileIO, path, null)) {
+        try (ParquetFileReader reader = getParquetReader(fileIO, path, LazyField.empty())) {
             ParquetMetadata parquetMetadata = reader.getFooter();
             List<BlockMetaData> blockMetaDataList = parquetMetadata.getBlocks();
             Map<String, Statistics<?>> resultStats = new HashMap<>();
@@ -79,11 +80,11 @@ public class ParquetUtil {
      * @return parquet reader, used for reading footer, status, etc.
      */
     public static ParquetFileReader getParquetReader(
-            FileIO fileIO, Path path, FileIndexResult fileIndexResult) throws IOException {
+            FileIO fileIO, Path path, LazyField<RoaringBitmap32> selectRows) throws IOException {
         return new ParquetFileReader(
                 ParquetInputFile.fromPath(fileIO, path),
                 ParquetReadOptions.builder().build(),
-                fileIndexResult);
+                selectRows);
     }
 
     static void assertStatsClass(

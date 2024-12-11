@@ -20,6 +20,7 @@ package org.apache.paimon.utils;
 
 import org.apache.paimon.annotation.VisibleForTesting;
 
+import org.roaringbitmap.RelativeRangeConsumer;
 import org.roaringbitmap.RoaringBitmap;
 
 import java.io.DataInput;
@@ -28,6 +29,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /** A compressed bitmap for 32-bit integer. */
 public class RoaringBitmap32 {
@@ -70,6 +72,25 @@ public class RoaringBitmap32 {
 
     public long rangeCardinality(long start, long end) {
         return roaringBitmap.rangeCardinality(start, end);
+    }
+
+    public void findRangeAbsent(int start, int length, Consumer<Range> consumer) {
+        roaringBitmap.forAllInRange(start, length, new RelativeRangeConsumer() {
+
+            @Override
+            public void acceptPresent(int relativePos) {}
+
+            @Override
+            public void acceptAbsent(int relativePos) {}
+
+            @Override
+            public void acceptAllPresent(int relativeFrom, int relativeTo) {}
+
+            @Override
+            public void acceptAllAbsent(int relativeFrom, int relativeTo) {
+                consumer.accept(new Range(relativeFrom, relativeTo));
+            }
+        });
     }
 
     public int last() {

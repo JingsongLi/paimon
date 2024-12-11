@@ -45,4 +45,8 @@ public class LazyField<T> {
     public boolean initialized() {
         return initialized;
     }
+
+    public static <T> LazyField<T> empty() {
+        return new LazyField<>(() -> null);
+    }
 }

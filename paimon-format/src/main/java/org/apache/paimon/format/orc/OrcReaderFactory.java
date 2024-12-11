@@ -23,8 +23,6 @@ import org.apache.paimon.data.columnar.ColumnVector;
 import org.apache.paimon.data.columnar.ColumnarRow;
 import org.apache.paimon.data.columnar.ColumnarRowIterator;
 import org.apache.paimon.data.columnar.VectorizedColumnBatch;
-import org.apache.paimon.fileindex.FileIndexResult;
-import org.apache.paimon.fileindex.bitmap.BitmapIndexResult;
 import org.apache.paimon.format.FormatReaderFactory;
 import org.apache.paimon.format.OrcFormatReaderContext;
 import org.apache.paimon.format.fs.HadoopReadOnlyFileSystem;
@@ -36,8 +34,10 @@ import org.apache.paimon.reader.RecordReader.RecordIterator;
 import org.apache.paimon.types.DataType;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.IOUtils;
+import org.apache.paimon.utils.LazyField;
 import org.apache.paimon.utils.Pair;
 import org.apache.paimon.utils.Pool;
+import org.apache.paimon.utils.RoaringBitmap32;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
@@ -109,7 +109,7 @@ public class OrcReaderFactory implements FormatReaderFactory {
                         context.filePath(),
                         0,
                         context.fileSize(),
-                        context.fileIndex(),
+                        context.selectRows(),
                         deletionVectorsEnabled);
         return new OrcVectorizedReader(orcReader, poolOfBatches);
     }
@@ -259,10 +259,10 @@ public class OrcReaderFactory implements FormatReaderFactory {
             org.apache.paimon.fs.Path path,
             long splitStart,
             long splitLength,
-            @Nullable FileIndexResult fileIndexResult,
+            LazyField<RoaringBitmap32> selectRows,
             boolean deletionVectorsEnabled)
             throws IOException {
-        org.apache.orc.Reader orcReader = createReader(conf, fileIO, path, fileIndexResult);
+        org.apache.orc.Reader orcReader = createReader(conf, fileIO, path, selectRows);
         try {
             // get offset and length for the stripes that start in the split
             Pair<Long, Long> offsetAndLength =
@@ -279,7 +279,7 @@ public class OrcReaderFactory implements FormatReaderFactory {
                                     OrcConf.TOLERATE_MISSING_SCHEMA.getBoolean(conf));
             if (!conjunctPredicates.isEmpty()
                     && !deletionVectorsEnabled
-                    && !(fileIndexResult instanceof BitmapIndexResult)) {
+                    && selectRows.get() == null) {
                 // row group filter push down will make row number change incorrect
                 // so deletion vectors mode and bitmap index cannot work with row group push down
                 options.useSelected(OrcConf.READER_USE_SELECTED.getBoolean(conf));
@@ -345,7 +345,7 @@ public class OrcReaderFactory implements FormatReaderFactory {
             org.apache.hadoop.conf.Configuration conf,
             FileIO fileIO,
             org.apache.paimon.fs.Path path,
-            @Nullable FileIndexResult fileIndexResult)
+            LazyField<RoaringBitmap32> selectRows)
             throws IOException {
         // open ORC file and create reader
         org.apache.hadoop.fs.Path hPath = new org.apache.hadoop.fs.Path(path.toUri());
@@ -358,7 +358,7 @@ public class OrcReaderFactory implements FormatReaderFactory {
         return new ReaderImpl(hPath, readerOptions) {
             @Override
             public RecordReader rows(Options options) throws IOException {
-                return new RecordReaderImpl(this, options, fileIndexResult);
+                return new RecordReaderImpl(this, options, selectRows);
             }
         };
     }

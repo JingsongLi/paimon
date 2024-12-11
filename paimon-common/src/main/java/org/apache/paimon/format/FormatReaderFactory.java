@@ -19,13 +19,12 @@
 package org.apache.paimon.format;
 
 import org.apache.paimon.data.InternalRow;
-import org.apache.paimon.fileindex.FileIndexResult;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.reader.FileRecordReader;
 import org.apache.paimon.reader.RecordReader;
-
-import javax.annotation.Nullable;
+import org.apache.paimon.utils.LazyField;
+import org.apache.paimon.utils.RoaringBitmap32;
 
 import java.io.IOException;
 
@@ -43,7 +42,6 @@ public interface FormatReaderFactory {
 
         long fileSize();
 
-        @Nullable
-        FileIndexResult fileIndex();
+        LazyField<RoaringBitmap32> selectRows();
     }
 }

@@ -116,7 +116,7 @@ public class ParquetReaderFactory implements FormatReaderFactory {
                 new ParquetFileReader(
                         ParquetInputFile.fromPath(context.fileIO(), context.filePath()),
                         builder.build(),
-                        context.fileIndex());
+                        context.selectRows());
         MessageType fileSchema = reader.getFileMetaData().getSchema();
         MessageType requestedSchema = clipParquetSchema(fileSchema);
         reader.setRequestedSchema(requestedSchema);
@@ -460,7 +460,6 @@ public class ParquetReaderFactory implements FormatReaderFactory {
         }
 
         private int getBachSize() throws IOException {
-
             long rangeBatchSize = Long.MAX_VALUE;
             if (this.currentRowGroupReadState.isFinished()) {
                 throw new IOException(

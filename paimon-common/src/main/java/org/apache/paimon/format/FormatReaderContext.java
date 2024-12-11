@@ -18,12 +18,11 @@
 
 package org.apache.paimon.format;
 
-import org.apache.paimon.fileindex.FileIndexResult;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.reader.RecordReader;
-
-import javax.annotation.Nullable;
+import org.apache.paimon.utils.LazyField;
+import org.apache.paimon.utils.RoaringBitmap32;
 
 /** the context for creating RecordReader {@link RecordReader}. */
 public class FormatReaderContext implements FormatReaderFactory.Context {
@@ -31,18 +30,18 @@ public class FormatReaderContext implements FormatReaderFactory.Context {
     private final FileIO fileIO;
     private final Path file;
     private final long fileSize;
-    @Nullable private final FileIndexResult fileIndexResult;
+    private final LazyField<RoaringBitmap32> selectRows;
 
     public FormatReaderContext(FileIO fileIO, Path file, long fileSize) {
-        this(fileIO, file, fileSize, null);
+        this(fileIO, file, fileSize, LazyField.empty());
     }
 
     public FormatReaderContext(
-            FileIO fileIO, Path file, long fileSize, @Nullable FileIndexResult fileIndexResult) {
+            FileIO fileIO, Path file, long fileSize, LazyField<RoaringBitmap32> selectRows) {
         this.fileIO = fileIO;
         this.file = file;
         this.fileSize = fileSize;
-        this.fileIndexResult = fileIndexResult;
+        this.selectRows = selectRows;
     }
 
     @Override
@@ -60,9 +59,8 @@ public class FormatReaderContext implements FormatReaderFactory.Context {
         return fileSize;
     }
 
-    @Nullable
     @Override
-    public FileIndexResult fileIndex() {
-        return fileIndexResult;
+    public LazyField<RoaringBitmap32> selectRows() {
+        return selectRows;
     }
 }

@@ -50,6 +50,8 @@ import org.apache.paimon.utils.BulkFormatMapping;
 import org.apache.paimon.utils.BulkFormatMapping.BulkFormatMappingBuilder;
 import org.apache.paimon.utils.FileStorePathFactory;
 import org.apache.paimon.utils.IOExceptionSupplier;
+import org.apache.paimon.utils.LazyField;
+import org.apache.paimon.utils.RoaringBitmap32;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -209,12 +211,16 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
             }
         }
 
+        LazyField<RoaringBitmap32> selectRows =
+                fileIndexResult instanceof BitmapIndexResult
+                        ? (BitmapIndexResult) fileIndexResult
+                        : LazyField.empty();
         FormatReaderContext formatReaderContext =
                 new FormatReaderContext(
                         fileIO,
                         dataFilePathFactory.toPath(file.fileName()),
                         file.fileSize(),
-                        fileIndexResult);
+                        selectRows);
         FileRecordReader<InternalRow> fileRecordReader =
                 new DataFileRecordReader(
                         bulkFormatMapping.getReaderFactory(),

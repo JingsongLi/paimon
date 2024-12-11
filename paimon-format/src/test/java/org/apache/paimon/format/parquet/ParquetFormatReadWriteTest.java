@@ -27,6 +27,7 @@ import org.apache.paimon.fs.PositionOutputStream;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.types.DataTypes;
 import org.apache.paimon.types.RowType;
+import org.apache.paimon.utils.LazyField;
 
 import org.apache.parquet.column.values.bloomfilter.BloomFilter;
 import org.apache.parquet.hadoop.ParquetFileReader;
@@ -75,7 +76,8 @@ public class ParquetFormatReadWriteTest extends FormatReadWriteTest {
         writer.close();
         out.close();
 
-        try (ParquetFileReader reader = ParquetUtil.getParquetReader(fileIO, file, null)) {
+        try (ParquetFileReader reader =
+                ParquetUtil.getParquetReader(fileIO, file, LazyField.empty())) {
             ParquetMetadata parquetMetadata = reader.getFooter();
             List<BlockMetaData> blockMetaDataList = parquetMetadata.getBlocks();
             for (BlockMetaData blockMetaData : blockMetaDataList) {
