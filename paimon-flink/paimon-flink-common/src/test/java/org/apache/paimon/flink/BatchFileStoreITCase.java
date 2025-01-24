@@ -53,6 +53,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** ITCase for batch file store. */
 public class BatchFileStoreITCase extends CatalogITCaseBase {
 
+    @Test
+    public void debug() throws Exception {
+        sql(
+                "CREATE TABLE test (a INT PRIMARY KEY NOT ENFORCED, b ARRAY<STRING>, c ARRAY<STRING>);");
+
+        sql("INSERT INTO test VALUES (1, ARRAY['2024','2025'], ARRAY['A','B'])");
+
+//        System.out.println(sql("SELECT * FROM test"));
+
+        System.out.println(sql("SELECT CAST (NULL AS STRING), a, b, c FROM test"));
+    }
+
     @Override
     protected List<String> ddl() {
         return Collections.singletonList("CREATE TABLE IF NOT EXISTS T (a INT, b INT, c INT)");

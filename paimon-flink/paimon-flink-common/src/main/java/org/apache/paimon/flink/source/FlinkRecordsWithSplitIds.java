@@ -18,6 +18,8 @@
 
 package org.apache.paimon.flink.source;
 
+import org.apache.flink.table.data.ArrayData;
+import org.apache.paimon.data.InternalArray;
 import org.apache.paimon.flink.NestedProjectedRowData;
 import org.apache.paimon.flink.source.metrics.FileStoreSourceReaderMetrics;
 import org.apache.paimon.utils.Reference;
@@ -32,7 +34,9 @@ import org.apache.flink.table.data.RowData;
 
 import javax.annotation.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -137,8 +141,17 @@ public class FlinkRecordsWithSplitIds implements RecordsWithSplitIds<RecordItera
             if (nestedProjectedRowData != null) {
                 rowData = nestedProjectedRowData.replaceRow(rowData);
             }
+            System.out.println(rowData.getInt(0) + " " + toString(rowData.getArray(1)) + " " + toString(rowData.getArray(2)));
             output.collect(rowData, timestamp);
             state.setPosition(record);
         }
+    }
+
+    private static String toString(ArrayData array) {
+        List<String> strings = new ArrayList<>();
+        for (int i = 0; i < array.size(); i++) {
+            strings.add(array.getString(i).toString());
+        }
+        return String.join(",", strings);
     }
 }
