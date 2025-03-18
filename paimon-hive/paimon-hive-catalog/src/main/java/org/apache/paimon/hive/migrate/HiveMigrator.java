@@ -135,10 +135,6 @@ public class HiveMigrator implements Migrator {
 
     @Override
     public void executeMigrate() throws Exception {
-        if (!client.tableExists(sourceDatabase, sourceTable)) {
-            throw new RuntimeException("Source hive table does not exist");
-        }
-
         Table sourceHiveTable = client.getTable(sourceDatabase, sourceTable);
         Map<String, String> properties = new HashMap<>(sourceHiveTable.getParameters());
         checkPrimaryKey();
