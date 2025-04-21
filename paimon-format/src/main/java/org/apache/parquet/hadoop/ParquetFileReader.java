@@ -1063,7 +1063,7 @@ public class ParquetFileReader implements Closeable {
     }
 
     /**
-     * Class should be considered private
+     * Class should be considered private.
      *
      * @param column the column chunk which the column index is to be returned for
      * @return the column index for the specified column chunk or {@code null} if there is no index
@@ -1098,7 +1098,7 @@ public class ParquetFileReader implements Closeable {
     }
 
     /**
-     * Class should be considered private
+     * Class should be considered private.
      *
      * @param column the column chunk which the offset index is to be returned for
      * @return the offset index for the specified column chunk or {@code null} if there is no index
@@ -1196,7 +1196,7 @@ public class ParquetFileReader implements Closeable {
         }
     }
 
-    /** The data for a column chunk */
+    /** The data for a column chunk. */
     private class Chunk {
 
         protected final ChunkDescriptor descriptor;
