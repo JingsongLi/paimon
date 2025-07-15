@@ -23,7 +23,6 @@ import org.apache.paimon.options.Options
 import org.apache.paimon.spark._
 import org.apache.paimon.spark.schema.SparkSystemColumns
 import org.apache.paimon.table.FileStoreTable
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, PaimonUtils, Row, SparkSession}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -68,6 +67,20 @@ case class WriteIntoPaimonTable(
     }
 
     val (dynamicPartitionOverwriteMode, overwritePartition) = parseSaveMode()
+
+    val upsertKey = table.coreOptions().upsertKey()
+    if (!upsertKey.isEmpty && overwritePartition == null) {
+      upsertTo(data)
+    } else {
+      writeTo(data, dynamicPartitionOverwriteMode, overwritePartition)
+    }
+
+    Seq.empty
+  }
+
+  private def writeTo(data: DataFrame,
+                      dynamicPartitionOverwriteMode: Boolean,
+                      overwritePartition: Map[String, String]): Unit = {
     // use the extra options to rebuild the table object
     updateTableWithOptions(
       Map(DYNAMIC_PARTITION_OVERWRITE.key -> dynamicPartitionOverwriteMode.toString))
@@ -78,8 +91,18 @@ case class WriteIntoPaimonTable(
     }
     val commitMessages = writer.write(data)
     writer.commit(commitMessages)
+  }
 
-    Seq.empty
+  private def upsertTo(data: DataFrame): Unit = {
+    new MergeIntoPaimonTable(
+      SparkTable(table),
+    )
+    val writer = PaimonSparkWriter(table)
+    if (overwritePartition != null) {
+      writer.writeBuilder.withOverwrite(overwritePartition.asJava)
+    }
+    val commitMessages = writer.write(data)
+    writer.commit(commitMessages)
   }
 
   private def parseSaveMode(): (Boolean, Map[String, String]) = {
