@@ -98,7 +98,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -825,33 +824,21 @@ public class ParquetFileReader implements Closeable {
     }
 
     private RowRanges calculateRowRanges(int blockIndex, RoaringBitmap32 selection) {
-        List<OffsetIndex> offsets;
         BlockMetaData block = blocks.get(blockIndex);
-        if (paths.isEmpty()) {
-            Optional<ColumnChunkMetaData> first = block.getColumns().stream().findFirst();
-            if (first.isPresent()) {
-                ColumnPath path = first.get().getPath();
-                OffsetIndex index =
-                        ColumnIndexStoreImpl.create(this, block, Collections.singleton(path))
-                                .getOffsetIndex(path);
-                offsets = Collections.singletonList(index);
-            } else {
-                offsets = Collections.emptyList();
-            }
-        } else {
-            ColumnIndexStore store = getColumnIndexStore(blockIndex);
-            offsets =
-                    paths.keySet().stream().map(store::getOffsetIndex).collect(Collectors.toList());
-        }
+        ColumnIndexStore store = getColumnIndexStore(blockIndex);
+        List<OffsetIndex> offsets =
+                paths.keySet().stream()
+                        .map(store::getOffsetIndex)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
 
         long rowCount = block.getRowCount();
         long rowIndexOffset = block.getRowIndexOffset();
         RowRanges rowRanges = RowRanges.createSingle(rowCount);
         for (OffsetIndex offset : offsets) {
-            if (offset != null) {
-                RowRanges result = RowRanges.create(rowCount, rowIndexOffset, offset, selection);
-                rowRanges = RowRanges.intersection(result, rowRanges);
-            }
+            // avoiding creating too many ranges, just filter columns pages
+            RowRanges result = RowRanges.create(rowCount, rowIndexOffset, offset, selection);
+            rowRanges = RowRanges.intersection(result, rowRanges);
         }
 
         return rowRanges;
