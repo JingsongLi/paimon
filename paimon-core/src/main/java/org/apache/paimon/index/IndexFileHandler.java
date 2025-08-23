@@ -217,4 +217,8 @@ public class IndexFileHandler {
             BinaryRow partition, int bucket, List<IndexFileMeta> fileMetas) {
         return dvIndex(partition, bucket).readAllDeletionVectors(fileMetas);
     }
+
+    public Map<String, DeletionVector> readAllDeletionVectors(IndexManifestEntry entry) {
+        return dvIndex(entry.partition(), entry.bucket()).readAllDeletionVectors(entry.indexFile());
+    }
 }
