@@ -117,7 +117,7 @@ class TableRead:
             extract_predicate_to_list(result, self.predicate, self.table.primary_keys)
             if result:
                 # the field index is unused for arrow field
-                pk_predicates = (PredicateBuilder(self.table.fields).and_predicates(result)).to_arrow()
+                pk_predicates = PredicateBuilder.and_predicates(result).to_arrow()
                 return pk_predicates
             else:
                 return None

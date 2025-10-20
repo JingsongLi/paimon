@@ -52,7 +52,7 @@ class FullStartingScanner(StartingScanner):
         pk_conditions = []
         trimmed_pk = [field.name for field in self.table.table_schema.get_trimmed_primary_key_fields()]
         extract_predicate_to_list(pk_conditions, self.predicate, trimmed_pk)
-        self.primary_key_predicate = PredicateBuilder(self.table.fields).and_predicates(pk_conditions)
+        self.primary_key_predicate = PredicateBuilder.and_predicates(pk_conditions)
 
         partition_conditions = defaultdict(list)
         extract_predicate_to_dict(partition_conditions, self.predicate, self.table.partition_keys)
