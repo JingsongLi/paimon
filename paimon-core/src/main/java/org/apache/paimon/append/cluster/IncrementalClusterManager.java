@@ -67,6 +67,7 @@ public class IncrementalClusterManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(IncrementalClusterManager.class);
 
+    private final FileStoreTable table;
     private final InternalRowPartitionComputer partitionComputer;
     private final Snapshot snapshot;
     private final SnapshotReader snapshotReader;
@@ -85,6 +86,7 @@ public class IncrementalClusterManager {
         checkArgument(
                 table.bucketMode() == BucketMode.BUCKET_UNAWARE,
                 "only append unaware-bucket table support incremental clustering.");
+        this.table = table;
         CoreOptions options = table.coreOptions();
         checkArgument(
                 options.clusteringIncrementalEnabled(),
@@ -204,8 +206,8 @@ public class IncrementalClusterManager {
         return partitionLevels;
     }
 
-    public Map<BinaryRow, Pair<List<DataSplit>, CommitMessage>> toSplits(
-            FileStoreTable table, Map<BinaryRow, CompactUnit> compactUnits) {
+    public Map<BinaryRow, Pair<List<DataSplit>, CommitMessage>> toSplitsAndRewriteDvFiles(
+            Map<BinaryRow, CompactUnit> compactUnits) {
         Map<BinaryRow, Pair<List<DataSplit>, CommitMessage>> result = new HashMap<>();
         boolean dvEnabled = table.coreOptions().deletionVectorsEnabled();
         for (BinaryRow partition : compactUnits.keySet()) {

@@ -261,7 +261,7 @@ public class CompactAction extends TableActionBase {
         }
 
         Map<BinaryRow, Pair<List<DataSplit>, CommitMessage>> partitionSplits =
-                incrementalClusterManager.toSplits(table, compactUnits);
+                incrementalClusterManager.toSplitsAndRewriteDvFiles(compactUnits);
 
         // 2. read，sort and write in partition
         List<DataStream<Committable>> dataStreams = new ArrayList<>();

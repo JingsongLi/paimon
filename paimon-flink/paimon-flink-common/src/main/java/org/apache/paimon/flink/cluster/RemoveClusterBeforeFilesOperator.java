@@ -29,6 +29,8 @@ import org.apache.paimon.table.source.Split;
 
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
+import javax.annotation.Nullable;
+
 import java.util.Collections;
 
 /** Operator used with {@link IncrementalClusterSplitSource}, to remove files to be clustered. */
@@ -36,9 +38,9 @@ public class RemoveClusterBeforeFilesOperator extends BoundedOneInputOperator<Sp
 
     private static final long serialVersionUID = 2L;
 
-    private final CommitMessage dvCommitMessage;
+    private final @Nullable CommitMessage dvCommitMessage;
 
-    public RemoveClusterBeforeFilesOperator(CommitMessage dvCommitMessage) {
+    public RemoveClusterBeforeFilesOperator(@Nullable CommitMessage dvCommitMessage) {
         this.dvCommitMessage = dvCommitMessage;
     }
 
@@ -66,8 +68,10 @@ public class RemoveClusterBeforeFilesOperator extends BoundedOneInputOperator<Sp
     }
 
     private void emitDvIndexCommitMessages(long checkpointId) {
-        output.collect(
-                new StreamRecord<>(
-                        new Committable(checkpointId, Committable.Kind.FILE, dvCommitMessage)));
+        if (dvCommitMessage != null) {
+            output.collect(
+                    new StreamRecord<>(
+                            new Committable(checkpointId, Committable.Kind.FILE, dvCommitMessage)));
+        }
     }
 }

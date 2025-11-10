@@ -89,7 +89,7 @@ public class IncrementalClusterSplitSource extends AbstractNonCoordinatedSource<
             FileStoreTable table,
             Map<String, String> partitionSpec,
             List<DataSplit> splits,
-            CommitMessage dvCommitMessage,
+            @Nullable CommitMessage dvCommitMessage,
             @Nullable Integer parallelism) {
         DataStream<Split> source =
                 env.fromSource(

@@ -27,6 +27,7 @@ import org.apache.paimon.append.cluster.IncrementalClusterManager;
 import org.apache.paimon.compact.CompactUnit;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.disk.IOManager;
+import org.apache.paimon.index.IndexFileMeta;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataIncrement;
@@ -538,7 +539,7 @@ public class CompactProcedure extends BaseProcedure {
                 incrementalClusterManager.prepareForCluster(fullCompaction);
 
         Map<BinaryRow, Pair<List<DataSplit>, CommitMessage>> partitionSplits =
-                incrementalClusterManager.toSplits(table, compactUnits);
+                incrementalClusterManager.toSplitsAndRewriteDvFiles(compactUnits);
 
         // sort in partition
         TableSorter sorter =
@@ -599,14 +600,21 @@ public class CompactProcedure extends BaseProcedure {
                         partition,
                         compactUnits.get(partition).outputLevel());
 
+                List<IndexFileMeta> newIndexFiles = new ArrayList<>();
+                List<IndexFileMeta> deletedIndexFiles = new ArrayList<>();
+                if (dvCommitMessage != null) {
+                    newIndexFiles = dvCommitMessage.compactIncrement().newIndexFiles();
+                    deletedIndexFiles = dvCommitMessage.compactIncrement().deletedIndexFiles();
+                }
+
                 // get the dv index messages
                 CompactIncrement compactIncrement =
                         new CompactIncrement(
                                 clusterBefore,
                                 clusterAfter,
                                 Collections.emptyList(),
-                                dvCommitMessage.compactIncrement().newIndexFiles(),
-                                dvCommitMessage.compactIncrement().deletedIndexFiles());
+                                newIndexFiles,
+                                deletedIndexFiles);
                 clusterMessages.add(
                         new CommitMessageImpl(
                                 partition,
