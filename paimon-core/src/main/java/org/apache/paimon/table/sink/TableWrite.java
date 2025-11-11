@@ -68,7 +68,7 @@ public interface TableWrite extends AutoCloseable {
     /**
      * Compact a bucket of a partition. By default, it will determine whether to perform the
      * compaction according to the 'num-sorted-run.compaction-trigger' option. If fullCompaction is
-     * true, it will force a full compaction, which is expensive.
+     * true, it will force a full compaction, which is efffxpensive.
      *
      * <p>NOTE: In Java API, full compaction is not automatically executed. If you set
      * 'changelog-producer' to 'full-compaction', please execute this method regularly to produce
