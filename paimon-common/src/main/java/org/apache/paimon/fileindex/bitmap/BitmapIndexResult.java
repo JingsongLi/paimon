@@ -19,14 +19,18 @@
 package org.apache.paimon.fileindex.bitmap;
 
 import org.apache.paimon.fileindex.FileIndexResult;
+import org.apache.paimon.globalindex.GlobalIndexResult;
+import org.apache.paimon.index.IndexResult;
 import org.apache.paimon.utils.LazyField;
+import org.apache.paimon.utils.Range;
 import org.apache.paimon.utils.RoaringBitmap32;
 
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.function.Supplier;
 
 /** bitmap file index result. */
-public class BitmapIndexResult extends LazyField<RoaringBitmap32> implements FileIndexResult {
+public class BitmapIndexResult extends LazyField<RoaringBitmap32> implements FileIndexResult, GlobalIndexResult {
 
     public BitmapIndexResult(Supplier<RoaringBitmap32> supplier) {
         super(supplier);
@@ -38,7 +42,12 @@ public class BitmapIndexResult extends LazyField<RoaringBitmap32> implements Fil
     }
 
     @Override
-    public FileIndexResult and(FileIndexResult fileIndexResult) {
+    public Iterator<Range> result() {
+        return null;
+    }
+
+    @Override
+    public FileIndexResult and(IndexResult fileIndexResult) {
         if (fileIndexResult instanceof BitmapIndexResult) {
             return new BitmapIndexResult(
                     () -> RoaringBitmap32.and(get(), ((BitmapIndexResult) fileIndexResult).get()));
@@ -47,7 +56,7 @@ public class BitmapIndexResult extends LazyField<RoaringBitmap32> implements Fil
     }
 
     @Override
-    public FileIndexResult or(FileIndexResult fileIndexResult) {
+    public FileIndexResult or(IndexResult fileIndexResult) {
         if (fileIndexResult instanceof BitmapIndexResult) {
             return new BitmapIndexResult(
                     () -> RoaringBitmap32.or(get(), ((BitmapIndexResult) fileIndexResult).get()));

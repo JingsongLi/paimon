@@ -18,8 +18,10 @@
 
 package org.apache.paimon.fileindex;
 
+import org.apache.paimon.index.IndexResult;
+
 /** File index result to decide whether filter a file. */
-public interface FileIndexResult {
+public interface FileIndexResult extends IndexResult {
 
     FileIndexResult REMAIN =
             new FileIndexResult() {
@@ -29,12 +31,12 @@ public interface FileIndexResult {
                 }
 
                 @Override
-                public FileIndexResult and(FileIndexResult fileIndexResult) {
-                    return fileIndexResult;
+                public FileIndexResult and(IndexResult fileIndexResult) {
+                    return (FileIndexResult) fileIndexResult;
                 }
 
                 @Override
-                public FileIndexResult or(FileIndexResult fileIndexResult) {
+                public FileIndexResult or(IndexResult fileIndexResult) {
                     return this;
                 }
             };
@@ -47,19 +49,21 @@ public interface FileIndexResult {
                 }
 
                 @Override
-                public FileIndexResult and(FileIndexResult fileIndexResult) {
+                public FileIndexResult and(IndexResult fileIndexResult) {
                     return this;
                 }
 
                 @Override
-                public FileIndexResult or(FileIndexResult fileIndexResult) {
-                    return fileIndexResult;
+                public FileIndexResult or(IndexResult fileIndexResult) {
+                    return (FileIndexResult) fileIndexResult;
                 }
             };
 
     boolean remain();
 
-    default FileIndexResult and(FileIndexResult fileIndexResult) {
+    @Override
+    default FileIndexResult and(IndexResult result) {
+        FileIndexResult fileIndexResult = (FileIndexResult) result;
         if (fileIndexResult.remain()) {
             return this;
         } else {
@@ -67,7 +71,9 @@ public interface FileIndexResult {
         }
     }
 
-    default FileIndexResult or(FileIndexResult fileIndexResult) {
+    @Override
+    default FileIndexResult or(IndexResult result) {
+        FileIndexResult fileIndexResult = (FileIndexResult) result;
         if (fileIndexResult.remain()) {
             return REMAIN;
         } else {
