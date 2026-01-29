@@ -22,7 +22,9 @@ import org.apache.paimon.CoreOptions
 import org.apache.paimon.partition.PartitionPredicate
 import org.apache.paimon.partition.PartitionPredicate.splitPartitionPredicatesAndDataPredicates
 import org.apache.paimon.predicate.{PartitionPredicateVisitor, Predicate, TopN, VectorSearch}
-import org.apache.paimon.table.{SpecialFields, Table}
+import org.apache.paimon.table.{FileStoreTable, SpecialFields, Table}
+import org.apache.paimon.table.format.predicate.PredicateUtils
+import org.apache.paimon.table.source.TableQueryAuth
 import org.apache.paimon.types.RowType
 
 import org.apache.spark.sql.connector.expressions.filter.{Predicate => SparkPredicate}
@@ -58,6 +60,27 @@ abstract class PaimonBaseScanBuilder
 
   override def pruneColumns(requiredSchema: StructType): Unit = {
     this.requiredSchema = requiredSchema
+    pruneColumnsWithAuth(requiredSchema)
+  }
+
+  private def pruneColumnsWithAuth(requiredSchema: StructType): Unit = {
+    val auth = table match {
+      case fileStoreTable: FileStoreTable =>
+        fileStoreTable.catalogEnvironment().tableQueryAuth(coreOptions)
+      case _ =>
+        return
+    }
+
+    val result = auth.auth(requiredSchema.fieldNames.toList.asJava)
+    if (result != null) {
+      val predicate = result.extractPredicate()
+      if (predicate != null) {
+        val names = PredicateUtils.collectFieldNames(predicate)
+        val fullType = SparkTypeUtils.fromPaimonRowType(table.rowType())
+        val addFields = fullType.filter(names.contains).filterNot(requiredSchema.contains)
+        this.requiredSchema = StructType(requiredSchema ++ addFields)
+      }
+    }
   }
 
   override def pushPredicates(predicates: Array[SparkPredicate]): Array[SparkPredicate] = {
