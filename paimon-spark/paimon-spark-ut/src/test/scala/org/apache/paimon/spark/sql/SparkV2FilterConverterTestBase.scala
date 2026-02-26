@@ -19,7 +19,7 @@
 package org.apache.paimon.spark.sql
 
 import org.apache.paimon.data.{BinaryString, Decimal, Timestamp}
-import org.apache.paimon.predicate.{FalseFunction, LeafPredicate, PredicateBuilder, TrueFunction, TrueTransform}
+import org.apache.paimon.predicate.PredicateBuilder
 import org.apache.paimon.spark.{PaimonSparkTestBase, SparkV2FilterConverter}
 import org.apache.paimon.spark.util.shim.TypeUtils.treatPaimonTimestampTypeAsSparkTimestampType
 import org.apache.paimon.table.source.DataSplit
@@ -355,17 +355,9 @@ abstract class SparkV2FilterConverterTestBase extends PaimonSparkTestBase {
     assert(scanFilesCount(filter) == 4)
   }
 
-  private def paimonAlwaysTrue: org.apache.paimon.predicate.Predicate =
-    LeafPredicate.of(
-      TrueTransform.INSTANCE,
-      TrueFunction.INSTANCE,
-      java.util.Collections.emptyList())
+  private def paimonAlwaysTrue: org.apache.paimon.predicate.Predicate = builder.alwaysTrue()
 
-  private def paimonAlwaysFalse: org.apache.paimon.predicate.Predicate =
-    LeafPredicate.of(
-      TrueTransform.INSTANCE,
-      FalseFunction.INSTANCE,
-      java.util.Collections.emptyList())
+  private def paimonAlwaysFalse: org.apache.paimon.predicate.Predicate = builder.alwaysFalse()
 
   test("V2Filter: AlwaysTrue") {
     val sparkAlwaysTrue =

@@ -18,7 +18,7 @@
 
 package org.apache.paimon.spark
 
-import org.apache.paimon.predicate.{FalseFunction, LeafPredicate, Predicate, PredicateBuilder, Transform, TrueFunction, TrueTransform}
+import org.apache.paimon.predicate.{Predicate, PredicateBuilder, Transform}
 import org.apache.paimon.spark.util.SparkExpressionConverter.{toPaimonLiteral, toPaimonTransform}
 import org.apache.paimon.types.RowType
 
@@ -165,16 +165,10 @@ case class SparkV2FilterConverter(rowType: RowType) extends Logging {
         }
 
       case ALWAYS_TRUE =>
-        LeafPredicate.of(
-          TrueTransform.INSTANCE,
-          TrueFunction.INSTANCE,
-          java.util.Collections.emptyList())
+        builder.alwaysTrue()
 
       case ALWAYS_FALSE =>
-        LeafPredicate.of(
-          TrueTransform.INSTANCE,
-          FalseFunction.INSTANCE,
-          java.util.Collections.emptyList())
+        builder.alwaysFalse()
 
       case _ => throw new UnsupportedOperationException(s"Convert $sparkPredicate is unsupported.")
     }

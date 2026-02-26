@@ -22,13 +22,13 @@ import org.apache.paimon.data.BinaryString;
 import org.apache.paimon.data.GenericArray;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.types.DataTypes;
+import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.InstantiationUtil;
 
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,27 +83,21 @@ class LeafPredicateTest {
 
     @Test
     public void testAlwaysTrueRow() {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, TrueFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysTrue();
         assertThat(predicate.test(GenericRow.of(1))).isTrue();
         assertThat(predicate.test(GenericRow.of((Object) null))).isTrue();
     }
 
     @Test
     public void testAlwaysFalseRow() {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, FalseFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysFalse();
         assertThat(predicate.test(GenericRow.of(1))).isFalse();
         assertThat(predicate.test(GenericRow.of((Object) null))).isFalse();
     }
 
     @Test
     public void testAlwaysTrueMinMax() {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, TrueFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysTrue();
         assertThat(
                         predicate.test(
                                 10,
@@ -116,9 +110,7 @@ class LeafPredicateTest {
 
     @Test
     public void testAlwaysFalseMinMax() {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, FalseFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysFalse();
         assertThat(
                         predicate.test(
                                 10,
@@ -131,35 +123,27 @@ class LeafPredicateTest {
 
     @Test
     public void testAlwaysTrueNegate() {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, TrueFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysTrue();
         Predicate negated = predicate.negate().get();
         assertThat(negated).isInstanceOf(LeafPredicate.class);
         LeafPredicate negatedLeaf = (LeafPredicate) negated;
-        assertThat(negatedLeaf.function()).isEqualTo(FalseFunction.INSTANCE);
-        assertThat(negatedLeaf.transform()).isInstanceOf(TrueTransform.class);
+        assertThat(negatedLeaf.function()).isEqualTo(AlwaysFalse.INSTANCE);
         assertThat(negatedLeaf.test(GenericRow.of(1))).isFalse();
     }
 
     @Test
     public void testAlwaysFalseNegate() {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, FalseFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysFalse();
         Predicate negated = predicate.negate().get();
         assertThat(negated).isInstanceOf(LeafPredicate.class);
         LeafPredicate negatedLeaf = (LeafPredicate) negated;
-        assertThat(negatedLeaf.function()).isEqualTo(TrueFunction.INSTANCE);
-        assertThat(negatedLeaf.transform()).isInstanceOf(TrueTransform.class);
+        assertThat(negatedLeaf.function()).isEqualTo(AlwaysTrue.INSTANCE);
         assertThat(negatedLeaf.test(GenericRow.of(1))).isTrue();
     }
 
     @Test
     public void testAlwaysTrueSerialization() throws IOException, ClassNotFoundException {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, TrueFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysTrue();
         LeafPredicate clone = InstantiationUtil.clone(predicate);
         assertThat(clone).isEqualTo(predicate);
         assertThat(clone.hashCode()).isEqualTo(predicate.hashCode());
@@ -167,11 +151,19 @@ class LeafPredicateTest {
 
     @Test
     public void testAlwaysFalseSerialization() throws IOException, ClassNotFoundException {
-        LeafPredicate predicate =
-                LeafPredicate.of(
-                        TrueTransform.INSTANCE, FalseFunction.INSTANCE, Collections.emptyList());
+        LeafPredicate predicate = alwaysFalse();
         LeafPredicate clone = InstantiationUtil.clone(predicate);
         assertThat(clone).isEqualTo(predicate);
         assertThat(clone.hashCode()).isEqualTo(predicate.hashCode());
+    }
+
+    private LeafPredicate alwaysTrue() {
+        PredicateBuilder builder = new PredicateBuilder(RowType.of());
+        return (LeafPredicate) builder.alwaysTrue();
+    }
+
+    private LeafPredicate alwaysFalse() {
+        PredicateBuilder builder = new PredicateBuilder(RowType.of());
+        return (LeafPredicate) builder.alwaysFalse();
     }
 }

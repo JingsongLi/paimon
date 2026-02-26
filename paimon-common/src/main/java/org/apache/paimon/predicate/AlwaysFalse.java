@@ -26,16 +26,16 @@ import java.util.List;
 import java.util.Optional;
 
 /** A {@link LeafFunction} that always returns {@code false}. Used for AlwaysFalse predicates. */
-public class FalseFunction extends LeafFunction {
+public class AlwaysFalse extends LeafFunction {
 
     private static final long serialVersionUID = 1L;
 
     public static final String NAME = "FALSE";
 
-    public static final FalseFunction INSTANCE = new FalseFunction();
+    public static final AlwaysFalse INSTANCE = new AlwaysFalse();
 
     @JsonCreator
-    private FalseFunction() {}
+    private AlwaysFalse() {}
 
     @Override
     public boolean test(DataType type, Object field, List<Object> literals) {
@@ -55,13 +55,13 @@ public class FalseFunction extends LeafFunction {
 
     @Override
     public Optional<LeafFunction> negate() {
-        return Optional.of(TrueFunction.INSTANCE);
+        return Optional.of(AlwaysTrue.INSTANCE);
     }
 
     @Override
     public <T> T visit(FunctionVisitor<T> visitor, FieldRef fieldRef, List<Object> literals) {
         throw new UnsupportedOperationException(
-                "FalseFunction does not support field-based visitation.");
+                "AlwaysFalse does not support field-based visitation.");
     }
 
     @Override

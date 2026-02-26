@@ -156,23 +156,15 @@ class PredicateJsonSerdeTest {
                         .expectJson(
                                 "{\"kind\":\"LEAF\",\"transform\":{\"name\":\"FIELD_REF\",\"fieldRef\":{\"index\":2,\"name\":\"f2\",\"type\":\"STRING\"}},\"function\":\"LIKE\",\"literals\":[\"%a%b%\"]}"),
 
-                // LeafPredicate - TrueTransform + TrueFunction (AlwaysTrue)
-                TestSpec.forPredicate(
-                                LeafPredicate.of(
-                                        TrueTransform.INSTANCE,
-                                        TrueFunction.INSTANCE,
-                                        Collections.emptyList()))
+                // LeafPredicate - AlwaysTrue
+                TestSpec.forPredicate(builder.alwaysTrue())
                         .expectJson(
-                                "{\"kind\":\"LEAF\",\"transform\":{\"name\":\"TRUE\"},\"function\":\"TRUE\",\"literals\":[]}"),
+                                "{\"kind\":\"LEAF\",\"transform\":{\"name\":\"NULL\"},\"function\":\"TRUE\",\"literals\":[]}"),
 
-                // LeafPredicate - TrueTransform + FalseFunction (AlwaysFalse)
-                TestSpec.forPredicate(
-                                LeafPredicate.of(
-                                        TrueTransform.INSTANCE,
-                                        FalseFunction.INSTANCE,
-                                        Collections.emptyList()))
+                // LeafPredicate - AlwaysFalse
+                TestSpec.forPredicate(builder.alwaysFalse())
                         .expectJson(
-                                "{\"kind\":\"LEAF\",\"transform\":{\"name\":\"TRUE\"},\"function\":\"FALSE\",\"literals\":[]}"),
+                                "{\"kind\":\"LEAF\",\"transform\":{\"name\":\"NULL\"},\"function\":\"FALSE\",\"literals\":[]}"),
 
                 // LeafPredicate - In with many values including nulls
                 TestSpec.forPredicate(

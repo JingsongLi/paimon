@@ -18,67 +18,54 @@
 
 package org.apache.paimon.predicate;
 
-import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.types.DataType;
-import org.apache.paimon.types.DataTypes;
 
 import org.apache.paimon.shade.jackson2.com.fasterxml.jackson.annotation.JsonCreator;
 
-import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
-/** A {@link Transform} that always returns {@code true}. Used for constant predicates. */
-public class TrueTransform implements Transform {
+/** A {@link LeafFunction} that always returns {@code true}. Used for AlwaysTrue predicates. */
+public class AlwaysTrue extends LeafFunction {
 
     private static final long serialVersionUID = 1L;
 
     public static final String NAME = "TRUE";
 
-    public static final TrueTransform INSTANCE = new TrueTransform();
+    public static final AlwaysTrue INSTANCE = new AlwaysTrue();
 
     @JsonCreator
-    private TrueTransform() {}
+    private AlwaysTrue() {}
 
     @Override
-    public String name() {
-        return NAME;
-    }
-
-    @Override
-    public List<Object> inputs() {
-        return Collections.emptyList();
-    }
-
-    @Override
-    public DataType outputType() {
-        return DataTypes.BOOLEAN();
-    }
-
-    @Override
-    public Object transform(InternalRow row) {
+    public boolean test(DataType type, Object field, List<Object> literals) {
         return true;
     }
 
     @Override
-    public Transform copyWithNewInputs(List<Object> inputs) {
-        return INSTANCE;
+    public boolean test(
+            DataType type,
+            long rowCount,
+            Object min,
+            Object max,
+            Long nullCount,
+            List<Object> literals) {
+        return true;
     }
 
     @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        return o != null && getClass() == o.getClass();
+    public Optional<LeafFunction> negate() {
+        return Optional.of(AlwaysFalse.INSTANCE);
     }
 
     @Override
-    public int hashCode() {
-        return NAME.hashCode();
+    public <T> T visit(FunctionVisitor<T> visitor, FieldRef fieldRef, List<Object> literals) {
+        throw new UnsupportedOperationException(
+                "AlwaysTrue does not support field-based visitation.");
     }
 
     @Override
-    public String toString() {
+    public String toJson() {
         return NAME;
     }
 }

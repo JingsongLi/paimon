@@ -39,7 +39,7 @@ import java.util.List;
     @JsonSubTypes.Type(value = ConcatWsTransform.class, name = ConcatWsTransform.NAME),
     @JsonSubTypes.Type(value = UpperTransform.class, name = UpperTransform.NAME),
     @JsonSubTypes.Type(value = LowerTransform.class, name = LowerTransform.NAME),
-    @JsonSubTypes.Type(value = TrueTransform.class, name = TrueTransform.NAME)
+    @JsonSubTypes.Type(value = NullTransform.class, name = NullTransform.NAME)
 })
 public interface Transform extends Serializable {
 

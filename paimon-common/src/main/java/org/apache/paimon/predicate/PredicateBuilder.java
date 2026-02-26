@@ -50,6 +50,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.apache.paimon.utils.InternalRowPartitionComputer.convertSpecToInternal;
 
@@ -241,6 +242,14 @@ public class PredicateBuilder {
             Transform transform, Object includedLowerBound, Object includedUpperBound) {
         return new LeafPredicate(
                 transform, Between.INSTANCE, Arrays.asList(includedLowerBound, includedUpperBound));
+    }
+
+    public Predicate alwaysFalse() {
+        return new LeafPredicate(NullTransform.INSTANCE, AlwaysFalse.INSTANCE, emptyList());
+    }
+
+    public Predicate alwaysTrue() {
+        return new LeafPredicate(NullTransform.INSTANCE, AlwaysTrue.INSTANCE, emptyList());
     }
 
     public static Predicate and(Predicate... predicates) {

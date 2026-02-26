@@ -68,8 +68,8 @@ public abstract class LeafFunction implements Serializable {
             registry.put(NotIn.NAME, NotIn.INSTANCE);
             registry.put(Between.NAME, Between.INSTANCE);
             registry.put(NotBetween.NAME, NotBetween.INSTANCE);
-            registry.put(TrueFunction.NAME, TrueFunction.INSTANCE);
-            registry.put(FalseFunction.NAME, FalseFunction.INSTANCE);
+            registry.put(AlwaysTrue.NAME, AlwaysTrue.INSTANCE);
+            registry.put(AlwaysFalse.NAME, AlwaysFalse.INSTANCE);
             return Collections.unmodifiableMap(registry);
         }
     }
