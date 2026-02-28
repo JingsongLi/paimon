@@ -35,6 +35,7 @@ import org.apache.paimon.sst.BlockIterator;
 import org.apache.paimon.sst.SstFileReader;
 import org.apache.paimon.utils.FileBasedBloomFilter;
 import org.apache.paimon.utils.LazyField;
+import org.apache.paimon.utils.Pair;
 import org.apache.paimon.utils.Preconditions;
 import org.apache.paimon.utils.RoaringNavigableMap64;
 
@@ -42,8 +43,10 @@ import javax.annotation.Nullable;
 
 import java.io.IOException;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.zip.CRC32;
 
@@ -355,6 +358,33 @@ public class BTreeIndexReader implements GlobalIndexReader {
                         }));
     }
 
+    /**
+     * Create an iterator to traverse all key-rowId pairs in this index file.
+     *
+     * @return an iterator over all entries
+     */
+    public Iterator<Pair<Object, long[]>> createIterator() throws IOException {
+        return new BTreeEntryIterator();
+    }
+
+    /**
+     * Get the min key of this index file.
+     *
+     * @return min key, null if the file only contains nulls
+     */
+    public Object getMinKey() {
+        return minKey;
+    }
+
+    /**
+     * Get the max key of this index file.
+     *
+     * @return max key, null if the file only contains nulls
+     */
+    public Object getMaxKey() {
+        return maxKey;
+    }
+
     private RoaringNavigableMap64 allNonNullRows() throws IOException {
         // Traverse all data to avoid returning null values, which is very advantageous in
         // situations where there are many null values
@@ -413,5 +443,76 @@ public class BTreeIndexReader implements GlobalIndexReader {
             ids[i] = sliceInput.readVarLenLong();
         }
         return ids;
+    }
+
+    /** An iterator to traverse all key-rowId pairs in the BTree index file. */
+    private class BTreeEntryIterator implements Iterator<Pair<Object, long[]>> {
+
+        private final SstFileReader.SstFileIterator fileIter;
+        private BlockIterator dataIter;
+        private Pair<Object, long[]> nextEntry;
+        private boolean nullOutputted = false;
+
+        BTreeEntryIterator() throws IOException {
+            this.fileIter = reader.createIterator();
+            if (minKey != null) {
+                fileIter.seekTo(keySerializer.serialize(minKey));
+            }
+            advance();
+        }
+
+        private void advance() {
+            // First output null values from nullBitmap
+            if (!nullOutputted) {
+                nullOutputted = true;
+                RoaringNavigableMap64 nulls = nullBitmap.get();
+                if (nulls != null && !nulls.isEmpty()) {
+                    long[] nullRowIds = new long[nulls.getIntCardinality()];
+                    int index = 0;
+                    for (Long rowId : nulls) {
+                        nullRowIds[index++] = rowId;
+                    }
+                    nextEntry = Pair.of(null, nullRowIds);
+                    return;
+                }
+            }
+
+            nextEntry = null;
+            while (true) {
+                // try to get next entry from current data block
+                if (dataIter != null && dataIter.hasNext()) {
+                    Map.Entry<MemorySlice, MemorySlice> entry = dataIter.next();
+                    Object key = keySerializer.deserialize(entry.getKey());
+                    long[] rowIds = deserializeRowIds(entry.getValue());
+                    nextEntry = Pair.of(key, rowIds);
+                    return;
+                }
+
+                // try to read next data block
+                try {
+                    dataIter = fileIter.readBatch();
+                    if (dataIter == null) {
+                        return; // no more data
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to read next batch from SST file", e);
+                }
+            }
+        }
+
+        @Override
+        public boolean hasNext() {
+            return nextEntry != null;
+        }
+
+        @Override
+        public Pair<Object, long[]> next() {
+            if (nextEntry == null) {
+                throw new NoSuchElementException();
+            }
+            Pair<Object, long[]> result = nextEntry;
+            advance();
+            return result;
+        }
     }
 }
