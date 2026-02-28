@@ -33,6 +33,7 @@ import org.apache.paimon.sst.BlockCache;
 import org.apache.paimon.sst.BlockHandle;
 import org.apache.paimon.sst.BlockIterator;
 import org.apache.paimon.sst.SstFileReader;
+import org.apache.paimon.sst.SstFileReader.SstFileIterator;
 import org.apache.paimon.utils.FileBasedBloomFilter;
 import org.apache.paimon.utils.LazyField;
 import org.apache.paimon.utils.Pair;
@@ -363,26 +364,8 @@ public class BTreeIndexReader implements GlobalIndexReader {
      *
      * @return an iterator over all entries
      */
-    public Iterator<Pair<Object, long[]>> createIterator() throws IOException {
+    public Iterator<Pair<Object, long[]>> createIterator() {
         return new BTreeEntryIterator();
-    }
-
-    /**
-     * Get the min key of this index file.
-     *
-     * @return min key, null if the file only contains nulls
-     */
-    public Object getMinKey() {
-        return minKey;
-    }
-
-    /**
-     * Get the max key of this index file.
-     *
-     * @return max key, null if the file only contains nulls
-     */
-    public Object getMaxKey() {
-        return maxKey;
     }
 
     private RoaringNavigableMap64 allNonNullRows() throws IOException {
@@ -406,7 +389,7 @@ public class BTreeIndexReader implements GlobalIndexReader {
      */
     private RoaringNavigableMap64 rangeQuery(
             Object from, Object to, boolean fromInclusive, boolean toInclusive) throws IOException {
-        SstFileReader.SstFileIterator fileIter = reader.createIterator();
+        SstFileIterator fileIter = reader.createIterator();
         fileIter.seekTo(keySerializer.serialize(from));
 
         RoaringNavigableMap64 result = new RoaringNavigableMap64();
@@ -448,12 +431,12 @@ public class BTreeIndexReader implements GlobalIndexReader {
     /** An iterator to traverse all key-rowId pairs in the BTree index file. */
     private class BTreeEntryIterator implements Iterator<Pair<Object, long[]>> {
 
-        private final SstFileReader.SstFileIterator fileIter;
+        private final SstFileIterator fileIter;
         private BlockIterator dataIter;
         private Pair<Object, long[]> nextEntry;
         private boolean nullOutputted = false;
 
-        BTreeEntryIterator() throws IOException {
+        private BTreeEntryIterator() {
             this.fileIter = reader.createIterator();
             if (minKey != null) {
                 fileIter.seekTo(keySerializer.serialize(minKey));
