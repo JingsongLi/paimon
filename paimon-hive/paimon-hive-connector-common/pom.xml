@@ -571,6 +571,29 @@ under the License.
             </exclusions>
         </dependency>
 
+        <!-- this is for iceberg clone test, and it should be put before hive-exec
+             for the same reason as org.apache.avro:avro. -->
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-avro</artifactId>
+            <version>${parquet.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-column</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-common</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-hadoop</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!--
         Why we need this test dependency:
         IDEA reads classes from the same project from target/classes of that module,
