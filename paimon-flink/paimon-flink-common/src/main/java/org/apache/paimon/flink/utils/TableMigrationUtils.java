@@ -62,28 +62,6 @@ public class TableMigrationUtils {
         }
     }
 
-    public static Migrator getIcebergImporter(
-            Catalog catalog,
-            String sourceDatabase,
-            String sourceTableName,
-            String targetDatabase,
-            String targetTableName,
-            Integer parallelism,
-            Map<String, String> options,
-            Map<String, String> icebergOptions) {
-
-        Options icebergConf = new Options(icebergOptions);
-        return new IcebergMigrator(
-                catalog,
-                targetDatabase,
-                targetTableName,
-                sourceDatabase,
-                sourceTableName,
-                icebergConf,
-                parallelism,
-                options);
-    }
-
     public static List<Migrator> getImporters(
             String connector,
             Catalog catalog,
