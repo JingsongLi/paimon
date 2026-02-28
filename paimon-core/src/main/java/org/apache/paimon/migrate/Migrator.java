@@ -18,7 +18,7 @@
 
 package org.apache.paimon.migrate;
 
-/** Migrator interface for migrating table from other data-lake like hive, iceberg, hudi and etc. */
+/** Migrator interface for migrating table from other data-lake like hive, iceberg and etc. */
 public interface Migrator {
 
     void executeMigrate() throws Exception;
