@@ -86,9 +86,3 @@ clone \
 "--included_tables" and "--excluded_tables" are optional parameters, which are used to specify the tables that need or don't need to be cloned. 
 The format is `<database1>.<table1>,<database2>.<table2>,<database3>.<table3>`.
 "--excluded_tables" has higher priority than "--included_tables" if you specified both.
-
-## Clone Iceberg Tables
-
-Clone Iceberg needs dependency: [iceberg-flink-runtime-1.20-1.8.1.jar](https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-flink-runtime-1.20/1.8.1/iceberg-flink-runtime-1.20-1.8.1.jar)
-
-The execution method is the same as the Hive table mentioned above.
