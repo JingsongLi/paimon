@@ -22,9 +22,7 @@ import org.apache.paimon.catalog.CachingCatalog;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.hive.HiveCatalog;
 import org.apache.paimon.hive.migrate.HiveMigrator;
-import org.apache.paimon.iceberg.migrate.IcebergMigrator;
 import org.apache.paimon.migrate.Migrator;
-import org.apache.paimon.options.Options;
 
 import java.util.List;
 import java.util.Map;
