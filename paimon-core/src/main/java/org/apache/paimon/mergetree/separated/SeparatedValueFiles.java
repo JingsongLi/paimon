@@ -18,7 +18,27 @@
 
 package org.apache.paimon.mergetree.separated;
 
+import org.apache.paimon.deletionvectors.BucketedDvMaintainer;
+import org.apache.paimon.io.DataFileMeta;
+import org.apache.paimon.lookup.sort.db.SimpleLsmKvDb;
+import org.apache.paimon.table.source.DeletionFile;
+import org.apache.paimon.utils.Pair;
+
+import java.util.List;
+
 public class SeparatedValueFiles {
 
+    private final List<DataFileMeta> files;
+    private final BucketedDvMaintainer dvMaintainer;
+    private final SimpleLsmKvDb kvDb;
 
+    public SeparatedValueFiles(List<DataFileMeta> files, BucketedDvMaintainer dvMaintainer, SimpleLsmKvDb kvDb) {
+        this.files = files;
+        this.dvMaintainer = dvMaintainer;
+        this.kvDb = kvDb;
+    }
+
+    public List<DataFileMeta> files() {
+        return files;
+    }
 }
