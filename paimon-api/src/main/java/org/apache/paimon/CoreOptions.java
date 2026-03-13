@@ -2304,6 +2304,15 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "The interval for checking visibility when visibility-callback enabled.");
 
+    public static final ConfigOption<Boolean> KEY_VALUE_SEPARATED =
+            key("key-value.separated")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Whether to enable the key value separation feature, "
+                                    + "which allows data files in the primary key table to be sorted by "
+                                    + "non primary key fields, thereby accelerating query performance.");
+
     private final Options options;
 
     public CoreOptions(Map<String, String> options) {
@@ -2359,6 +2368,10 @@ public class CoreOptions implements Serializable {
 
     public TableType type() {
         return options.get(TYPE);
+    }
+
+    public boolean keyValueSeparated() {
+        return options.get(KEY_VALUE_SEPARATED);
     }
 
     public String formatType() {
