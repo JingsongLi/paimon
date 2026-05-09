@@ -99,8 +99,7 @@ class TableSchema:
         declared. Mirrors Java ``TableSchema.logicalBucketKeyType()``.
         """
         field_map = {f.name: f for f in self.fields}
-        return [field_map[name] for name in self.bucket_keys
-                if name in field_map]
+        return [field_map[name] for name in self.bucket_keys]
 
     def to_schema(self) -> Schema:
         return Schema(

@@ -106,9 +106,15 @@ class ManifestFileManager:
         reader = fastavro.reader(buffer)
 
         for record in reader:
-            if early_entry_filter is not None and not early_entry_filter(
-                    record['_BUCKET'], record['_TOTAL_BUCKETS']):
-                continue
+            if early_entry_filter is not None:
+                try:
+                    bucket = record['_BUCKET']
+                    total_buckets = record['_TOTAL_BUCKETS']
+                except KeyError:
+                    pass
+                else:
+                    if not early_entry_filter(bucket, total_buckets):
+                        continue
             file_dict = dict(record['_FILE'])
             key_dict = dict(file_dict['_KEY_STATS'])
             key_stats = SimpleStats(

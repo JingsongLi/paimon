@@ -102,16 +102,17 @@ MAX_VALUES = 1000
 #      hasn't been cross-validated against Java's ``BinaryRow`` (ARRAY,
 #      MAP, ROW, MULTISET, VARIANT, BLOB). Until that validation lands,
 #      treating them as safe risks a hash divergence.
-_UNSAFE_BUCKET_KEY_TYPES = (
+_UNSAFE_BUCKET_KEY_TYPES = frozenset({
     'DECIMAL',
     'TIMESTAMP',
+    'TIMESTAMP_WITH_LOCAL_TIME_ZONE',
     'ARRAY',
     'MAP',
     'ROW',
     'MULTISET',
     'VARIANT',
     'BLOB',
-)
+})
 
 
 def _has_unsafe_bucket_key_type(bucket_key_fields: List[DataField]) -> bool:
@@ -119,8 +120,8 @@ def _has_unsafe_bucket_key_type(bucket_key_fields: List[DataField]) -> bool:
         type_name = getattr(getattr(f, 'type', None), 'type', '')
         if not type_name:
             continue
-        head = type_name.split('(')[0].strip().upper()
-        if any(head.startswith(prefix) for prefix in _UNSAFE_BUCKET_KEY_TYPES):
+        head = type_name.split('(')[0].split('<')[0].strip().upper()
+        if head in _UNSAFE_BUCKET_KEY_TYPES:
             return True
     return False
 
