@@ -1,0 +1,13 @@
+[package]
+name = "paimon-vindex-python"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "paimon_vindex"
+crate-type = ["cdylib"]
+
+[dependencies]
+paimon-vindex-core = { path = "../core" }
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
