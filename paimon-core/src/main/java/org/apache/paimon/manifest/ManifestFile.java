@@ -161,8 +161,7 @@ public class ManifestFile extends ObjectsFile<ManifestEntry> {
      * <p>This method intentionally bypasses the manifest cache because cached entries are
      * materialized with the complete manifest schema.
      */
-    public CloseableIterator<BinaryManifestEntry> scan(
-            String fileName, @Nullable Long fileSize, Projection projection) {
+    public CloseableIterator<BinaryManifestEntry> scan(String fileName, Projection projection) {
         try {
             CloseableIterator<InternalRow> rows =
                     createManifestIterator(
@@ -217,7 +216,7 @@ public class ManifestFile extends ObjectsFile<ManifestEntry> {
     public List<ExpireFileEntry> readExpireFileEntries(String fileName, @Nullable Long fileSize) {
         List<ExpireFileEntry> result = new ArrayList<>();
         try (CloseableIterator<BinaryManifestEntry> entries =
-                scan(fileName, fileSize, EXPIRE_FILE_PROJECTION)) {
+                scan(fileName, EXPIRE_FILE_PROJECTION)) {
             while (entries.hasNext()) {
                 result.add(ExpireFileEntry.from(entries.next()));
             }

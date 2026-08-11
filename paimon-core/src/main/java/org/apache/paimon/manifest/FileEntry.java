@@ -250,7 +250,6 @@ public interface FileEntry {
                     try (CloseableIterator<BinaryManifestEntry> entries =
                             manifestFile.scan(
                                     manifest.fileName(),
-                                    manifest.fileSize(),
                                     BinaryManifestEntry.DELETE_ENTRY_PROJECTION)) {
                         while (entries.hasNext()) {
                             BinaryManifestEntry entry = entries.next();
