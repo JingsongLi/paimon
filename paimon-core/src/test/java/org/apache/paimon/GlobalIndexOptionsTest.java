@@ -255,29 +255,42 @@ class GlobalIndexOptionsTest {
                 .doesNotThrowAnyException();
     }
 
-    @Test
-    void testPrimaryKeyRequirementsStillApply() {
+    @ParameterizedTest
+    @CsvSource({
+        "btree,btree",
+        "bitmap,bitmap",
+        "multivalue,multivalue",
+        "fm,fm",
+        "full-text,full-text",
+        "ivf-pq,vector"
+    })
+    void testIndexOptionsAreNotValidatedWithSchema(String type, String legacyFamily) {
         Map<String, String> values = new HashMap<>();
-        values.put("global-index.btree.index-columns", "amount");
+        values.put("global-index." + type + ".index-columns", "unknown,,amount,amount");
+        values.put("pk-" + legacyFamily + ".index.columns", "unknown,,amount,amount");
+        values.put("fields.amount.index-options", "invalid JSON");
+        values.put("fields.amount.pk-" + legacyFamily + ".index.options", "invalid JSON");
         values.put("bucket", "1");
-        assertThatThrownBy(() -> SchemaValidation.validateTableSchema(schema(values, true)))
-                .hasMessageContaining("require deletion-vectors.enabled = true");
-        values.put("deletion-vectors.enabled", "true");
-        values.put("global-index.bitmap.index-columns", "amount");
-        assertThatThrownBy(() -> SchemaValidation.validateTableSchema(schema(values, true)))
-                .hasMessageContaining("at most one primary-key index");
+        assertThatCode(() -> SchemaValidation.validateTableSchema(schema(values, true)))
+                .doesNotThrowAnyException();
+
+        values.put("bucket", "-1");
+        values.put("row-tracking.enabled", "true");
+        values.put("data-evolution.enabled", "true");
+        assertThatCode(() -> SchemaValidation.validateTableSchema(schema(values, false)))
+                .doesNotThrowAnyException();
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"amount,amount", "unknown", "amount,", ""})
-    void testInvalidColumnDeclarationsAreRejected(String columns) {
+    void testSchemaDoesNotValidateIndexColumnDeclarations(String columns) {
         Map<String, String> values = new HashMap<>();
         values.put("global-index.btree.index-columns", columns);
         values.put("bucket", "-1");
         values.put("row-tracking.enabled", "true");
         values.put("data-evolution.enabled", "true");
-        assertThatThrownBy(() -> SchemaValidation.validateTableSchema(schema(values, false)))
-                .hasMessageContaining("global-index.btree.index-columns");
+        assertThatCode(() -> SchemaValidation.validateTableSchema(schema(values, false)))
+                .doesNotThrowAnyException();
     }
 
     private static TableSchema schema(Map<String, String> options, boolean primaryKey) {

@@ -147,7 +147,7 @@ public class FullTextSearchBuilderImpl implements FullTextSearchBuilder {
     }
 
     private Optional<PrimaryKeyIndexDefinition> primaryKeyFullTextDefinition(DataField textColumn) {
-        if (table.coreOptions().dataEvolutionEnabled()) {
+        if (table.schema().primaryKeys().isEmpty() || table.coreOptions().dataEvolutionEnabled()) {
             return Optional.empty();
         }
         if (table.coreOptions().primaryKeyFullTextIndexColumns().isEmpty()) {

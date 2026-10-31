@@ -182,6 +182,7 @@ class PrimaryKeyIndexDefinitionsTest(unittest.TestCase):
         def builder(mode):
             schema = TableSchema(
                 fields=fields,
+                primary_keys=['id'],
                 options={"pk-full-text.index.columns": "content",
                          "global-index.search-mode": mode})
             table = SimpleNamespace(
@@ -193,6 +194,7 @@ class PrimaryKeyIndexDefinitionsTest(unittest.TestCase):
             builder("fast").new_full_text_read(), PrimaryKeyFullTextRead)
         schema = TableSchema(
             fields=fields,
+            primary_keys=['id'],
             options={
                 "pk-full-text.index.columns": "content",
                 "global-index.search-mode": "full",
@@ -211,6 +213,16 @@ class PrimaryKeyIndexDefinitionsTest(unittest.TestCase):
             with self.subTest(mode=mode), self.assertRaisesRegex(
                     NotImplementedError, "only supports the FAST"):
                 builder(mode).new_full_text_read()
+
+    def test_append_full_text_declarations_do_not_select_primary_key_reads(self):
+        field = DataField(0, 'content', AtomicType('STRING'))
+        for key in ('global-index.full-text.index-columns', 'global-index.full-text.index-column',
+                    'pk-full-text.index.columns'):
+            with self.subTest(key=key):
+                schema = TableSchema(fields=[field], options={key: 'content'})
+                table = SimpleNamespace(fields=[field], table_schema=schema, partition_keys=[])
+                builder = FullTextSearchBuilderImpl(table).with_query('content', 'paimon').with_limit(2)
+                self.assertIsNone(builder._primary_key_full_text_definition())
 
     def test_primary_key_full_text_reader_cannot_bypass_fast_mode(self):
         field = DataField(1, "content", AtomicType("STRING"))
