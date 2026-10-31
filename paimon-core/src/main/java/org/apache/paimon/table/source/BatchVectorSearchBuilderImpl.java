@@ -157,7 +157,8 @@ public class BatchVectorSearchBuilderImpl implements BatchVectorSearchBuilder {
     }
 
     protected boolean isPrimaryKeyVectorSearch() {
-        return vectorColumn != null
+        return !table.schema().primaryKeys().isEmpty()
+                && vectorColumn != null
                 && table.coreOptions().primaryKeyVectorIndexColumns().contains(vectorColumn.name());
     }
 }

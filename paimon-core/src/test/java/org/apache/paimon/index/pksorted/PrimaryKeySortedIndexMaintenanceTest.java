@@ -60,6 +60,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -90,9 +92,10 @@ class PrimaryKeySortedIndexMaintenanceTest {
         ioManager.close();
     }
 
-    @Test
-    void testBuildRestoreAndReplaceSourceGroups() throws Exception {
-        TestFileStore store = createStore();
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void testBuildRestoreAndReplaceSourceGroups(boolean sharedOptions) throws Exception {
+        TestFileStore store = createStore(sharedOptions);
         TestKeyValueGenerator generator = new TestKeyValueGenerator();
         List<KeyValue> firstBatch =
                 Arrays.asList(
@@ -317,13 +320,21 @@ class PrimaryKeySortedIndexMaintenanceTest {
         return record.replaceValue(extended);
     }
 
-    private TestFileStore createStore() throws Exception {
+    private TestFileStore createStore(boolean sharedOptions) throws Exception {
         Map<String, String> options = new HashMap<>();
         options.put(CoreOptions.BUCKET.key(), "1");
         options.put(CoreOptions.DELETION_VECTORS_ENABLED.key(), "true");
         options.put(CoreOptions.COMPACTION_FORCE_REWRITE_ALL_FILES.key(), "true");
-        options.put(CoreOptions.PK_BTREE_INDEX_COLUMNS.key(), "itemId");
-        options.put(CoreOptions.PK_BITMAP_INDEX_COLUMNS.key(), "comment");
+        options.put(
+                sharedOptions
+                        ? "global-index.btree.index-columns"
+                        : CoreOptions.PK_BTREE_INDEX_COLUMNS.key(),
+                "itemId");
+        options.put(
+                sharedOptions
+                        ? "global-index.bitmap.index-columns"
+                        : CoreOptions.PK_BITMAP_INDEX_COLUMNS.key(),
+                "comment");
         SchemaManager schemaManager =
                 new FileSystemSchemaManager(LocalFileIO.create(), new Path(tempDir.toUri()));
         TableSchema schema =
@@ -362,6 +373,7 @@ class PrimaryKeySortedIndexMaintenanceTest {
         options.put(CoreOptions.PK_VECTOR_INDEX_COLUMNS.key(), "embedding");
         options.put("fields.embedding.pk-vector.index.type", "test-vector-ann");
         options.put("fields.embedding.pk-vector.distance.metric", "l2");
+        options.put("fields.embedding.pk-vector.index.options", "{\"metric\":\"L2\"}");
 
         List<DataField> fields =
                 new ArrayList<>(TestKeyValueGenerator.DEFAULT_ROW_TYPE.getFields());

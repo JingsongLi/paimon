@@ -22,7 +22,7 @@ from pypaimon.globalindex.vector_search_result import DictBasedScoredIndexResult
 from pypaimon.execution.native.table import (_catalog_metastore, _native_table)
 from pypaimon.execution.native.read.builder import (_predicate_to_native)
 from pypaimon.execution.native.runtime import (native_runtime_available)
-from pypaimon.execution.native.read.native_search_plan import _result
+from pypaimon.execution.native.read.native_search_plan import _result, _index_search_options
 
 
 def _native_vector_builder(builder, batch=False):
@@ -44,7 +44,11 @@ def _native_vector_builder(builder, batch=False):
         return None
     if not native_runtime_available():
         return None
-    native_table = _native_table(table)
+    options = _index_search_options(table, builder._vector_column.name if builder._vector_column else None,
+                                    overrides=builder._options, scalar_filter=builder._filter)
+    if options is None:
+        return None
+    native_table = _native_table(table.copy(options))
     native = (native_table.new_batch_vector_search_builder() if batch else
               native_table.new_vector_search_builder())
     if builder._vector_column is not None:

@@ -53,6 +53,23 @@ from pypaimon.utils.range import Range
 
 
 class PrimaryKeyIndexDefinitionsTest(unittest.TestCase):
+    def test_shared_vector_and_full_text_definitions(self):
+        schema = TableSchema(
+            fields=[DataField(0, "embedding", AtomicType("VECTOR(3)")),
+                    DataField(1, "content", AtomicType("STRING"))],
+            options={
+                "global-index.ivf-pq.index-columns": "embedding",
+                "ivf-pq.dimension": "3",
+                "fields.embedding.index-options": '{"nlist":64,"metric":"cosine"}',
+                "global-index.full-text.index-column": "content",
+                "fields.content.index-options": '{"tokenizer":"jieba"}',
+            })
+        definitions = PrimaryKeyIndexDefinitions.create(schema).definitions
+        self.assertEqual(["ivf-pq", "full-text"], [d.index_type for d in definitions])
+        self.assertEqual("64", definitions[0].options.to_map()["ivf-pq.nlist"])
+        self.assertEqual("cosine", definitions[0].options.to_map()["ivf-pq.metric"])
+        self.assertEqual("jieba", definitions[1].options.to_map()["full-text.tokenizer"])
+
     def test_bucket_planners_preserve_capture_and_physical_metadata(self):
         from pypaimon.execution.python.read.search.primary_key_full_text_scan import _full_text_bucket_splits
         from pypaimon.table.source.deletion_file import DeletionFile
@@ -133,7 +150,9 @@ class PrimaryKeyIndexDefinitionsTest(unittest.TestCase):
     def test_builders_route_primary_key_searches(self):
         schema = TableSchema(
             fields=[DataField(0, "embedding", AtomicType("VECTOR(3)")),
-                    DataField(1, "content", AtomicType("STRING"))],
+                    DataField(1, "content", AtomicType("STRING")),
+                    DataField(2, "id", AtomicType("INT"))],
+            primary_keys=["id"],
             options={
                 "pk-vector.index.columns": "embedding",
                 "fields.embedding.pk-vector.index.type": "vindex",

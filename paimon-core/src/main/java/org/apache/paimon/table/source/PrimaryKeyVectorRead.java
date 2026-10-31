@@ -144,7 +144,10 @@ public class PrimaryKeyVectorRead implements VectorRead, Serializable {
                 normalize(table.coreOptions().primaryKeyVectorDistanceMetric(vectorField.name()));
         this.refineFactor =
                 VectorSearchRefineOptions.resolve(
-                        this.searchOptions, table.options(), vectorField.name(), indexType);
+                        this.searchOptions,
+                        this.indexOptions.toMap(),
+                        vectorField.name(),
+                        indexType);
         this.indexedLimit = VectorSearchRefineOptions.searchLimit(limit, refineFactor);
         this.filter = filter;
     }

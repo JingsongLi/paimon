@@ -29,7 +29,6 @@ import org.apache.paimon.globalindex.GlobalIndexEvaluator;
 import org.apache.paimon.globalindex.GlobalIndexIOMeta;
 import org.apache.paimon.globalindex.GlobalIndexReader;
 import org.apache.paimon.globalindex.GlobalIndexer;
-import org.apache.paimon.globalindex.GlobalIndexerFactoryUtils;
 import org.apache.paimon.globalindex.OffsetGlobalIndexReader;
 import org.apache.paimon.globalindex.ScoredGlobalIndexResult;
 import org.apache.paimon.globalindex.VectorGlobalIndexer;
@@ -38,6 +37,7 @@ import org.apache.paimon.globalindex.io.GlobalIndexFileReader;
 import org.apache.paimon.index.GlobalIndexMeta;
 import org.apache.paimon.index.IndexFileMeta;
 import org.apache.paimon.index.IndexPathFactory;
+import org.apache.paimon.options.Options;
 import org.apache.paimon.partition.PartitionPredicate;
 import org.apache.paimon.predicate.BatchVectorSearch;
 import org.apache.paimon.predicate.Predicate;
@@ -129,20 +129,20 @@ public abstract class AbstractDataEvolutionVectorRead implements Serializable {
     }
 
     protected GlobalIndexer createGlobalIndexer(String indexType) {
-        return GlobalIndexerFactoryUtils.load(indexType)
-                .create(
-                        Collections.singletonList(vectorColumn),
-                        table.coreOptions().toConfiguration());
+        return GlobalIndexer.create(
+                indexType,
+                Collections.singletonList(vectorColumn),
+                table.coreOptions().toConfiguration());
     }
 
     private GlobalIndexer createGlobalIndexer(String indexType, GlobalIndexMeta meta) {
         if (meta.extraFieldIds() == null) {
             return createGlobalIndexer(indexType);
         }
-        return GlobalIndexerFactoryUtils.load(indexType)
-                .create(
-                        meta.getIndexedFields(table.rowType()),
-                        table.coreOptions().toConfiguration());
+        return GlobalIndexer.create(
+                indexType,
+                meta.getIndexedFields(table.rowType()),
+                table.coreOptions().toConfiguration());
     }
 
     /**
@@ -780,6 +780,20 @@ public abstract class AbstractDataEvolutionVectorRead implements Serializable {
     @Nullable
     private String configuredRawSearchMetric(Map<String, String> options) {
         String fieldPrefix = "fields." + vectorColumn.name() + ".";
+        if (options.containsKey(fieldPrefix + "index-options")) {
+            CoreOptions configured = new CoreOptions(new Options(table.options(), options));
+            String type = configured.primaryKeyVectorIndexType(vectorColumn.name());
+            if (type == null) {
+                type = "vector";
+            }
+            String configuredMetric =
+                    configured
+                            .globalIndexOptions(type, vectorColumn.name(), false)
+                            .get(type + ".metric");
+            if (configuredMetric != null) {
+                return configuredMetric;
+            }
+        }
         String metric = option(options, fieldPrefix + "distance.metric");
         if (metric == null) {
             metric = option(options, fieldPrefix + "metric");
@@ -826,11 +840,14 @@ public abstract class AbstractDataEvolutionVectorRead implements Serializable {
     }
 
     protected int configuredRefineFactor(String indexType) {
+        Options resolved =
+                new CoreOptions(
+                                new Options(
+                                        table == null ? Collections.emptyMap() : table.options(),
+                                        options))
+                        .globalIndexOptions(indexType, vectorColumn.name());
         return VectorSearchRefineOptions.resolve(
-                options,
-                table == null ? Collections.emptyMap() : table.options(),
-                vectorColumn.name(),
-                indexType);
+                options, resolved.toMap(), vectorColumn.name(), indexType);
     }
 
     private static IndexFileMeta firstVectorIndexFile(List<IndexVectorSearchSplit> splits) {

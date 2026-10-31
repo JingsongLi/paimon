@@ -45,6 +45,76 @@ from pypaimon.utils.range import Range
 
 class GlobalIndexTest(unittest.TestCase):
 
+    def test_legacy_primary_key_metric_resolution_is_idempotent(self):
+        for metric in ('COSINE', 'inner-product', 'L2'):
+            with self.subTest(metric=metric):
+                values = {'pk-vector.index.columns': 'embedding',
+                          'fields.embedding.pk-vector.index.type': 'ivf-pq',
+                          'fields.embedding.pk-vector.distance.metric': metric.lower().replace('-', '_'),
+                          'fields.embedding.pk-vector.index.options': '{"metric":"%s"}' % metric}
+                first = CoreOptions(Options(values)).primary_key_vector_index_options('embedding')
+                second = CoreOptions(first).global_index_options('ivf-pq', 'embedding')
+                self.assertEqual(first.to_map(), second.to_map())
+                self.assertEqual('{"metric":"%s"}' % metric,
+                                 values['fields.embedding.pk-vector.index.options'])
+
+    def test_shared_index_column_precedence_and_legacy_fallback(self):
+        for index_type, legacy in (("btree", "btree"), ("bitmap", "bitmap"),
+                                   ("full-text", "full-text"), ("ivf-pq", "vector"),
+                                   ("fm", "fm"), ("multivalue", "multivalue")):
+            with self.subTest(index_type=index_type):
+                values = {"pk-%s.index.columns" % legacy: "old",
+                          "fields.old.pk-vector.index.type": "ivf-pq"}
+                self.assertEqual(["old"], CoreOptions(Options(values)).global_index_columns(index_type))
+                values["global-index.%s.index-column" % index_type] = "single"
+                self.assertEqual(["single"], CoreOptions(Options(values)).global_index_columns(index_type))
+                values["global-index.%s.index-columns" % index_type] = " first, second "
+                core = CoreOptions(Options(values))
+                self.assertEqual(["first", "second"], core.global_index_columns(index_type))
+                self.assertEqual([index_type], core.global_index_types())
+
+    def test_shared_field_options_override_type_defaults(self):
+        for index_type, prefix, key in (("btree", "btree-index.", "block-size"),
+                                         ("bitmap", "bitmap-index.", "dictionary-block-size"),
+                                         ("full-text", "full-text.", "tokenizer"),
+                                         ("ivf-pq", "ivf-pq.", "nlist")):
+            with self.subTest(index_type=index_type):
+                values = {prefix + key: "old",
+                          "fields.payload.index-options": '{"%s":"new"}' % key,
+                          "sorted-index.records-per-file": "20"}
+                core = CoreOptions(Options(values))
+                resolved = core.global_index_options(index_type, "payload").to_map()
+                self.assertEqual("new", resolved[prefix + key])
+                self.assertEqual("20", resolved["sorted-index.records-per-file"])
+                self.assertEqual("old", values[prefix + key])
+
+    def test_shared_vector_type_and_documented_metric(self):
+        values = {"global-index.ivf-pq.index-columns": "embedding",
+                  "pk-vector.index.columns": "old",
+                  "fields.embedding.pk-vector.index.type": "diskann",
+                  "ivf-pq.distance.metric": "l2",
+                  "ivf-pq.dimension": "768",
+                  "fields.embedding.nlist": "48",
+                  "fields.embedding.distance.metric": "cosine"}
+        core = CoreOptions(Options(values))
+        self.assertEqual(["embedding"], core.primary_key_vector_index_columns())
+        self.assertEqual("ivf-pq", core.primary_key_vector_index_type("embedding"))
+        self.assertEqual("cosine", core.primary_key_vector_distance_metric("embedding"))
+        values["fields.embedding.index-options"] = '{"nlist":64,"distance.metric":"inner_product"}'
+        core = CoreOptions(Options(values))
+        self.assertEqual("inner_product", core.primary_key_vector_distance_metric("embedding"))
+        resolved = core.primary_key_vector_index_options("embedding").to_map()
+        self.assertEqual("768", resolved["ivf-pq.dimension"])
+        self.assertEqual("64", resolved["fields.embedding.nlist"])
+        self.assertEqual("inner_product", resolved["ivf-pq.distance.metric"])
+
+    def test_shared_field_options_reject_invalid_values(self):
+        for serialized in ('[]', '{"nlist":null}', '{"":64}', 'invalid'):
+            with self.subTest(serialized=serialized):
+                core = CoreOptions(Options({"fields.embedding.index-options": serialized}))
+                with self.assertRaisesRegex(ValueError, 'fields.embedding.index-options'):
+                    core.global_index_options("ivf-pq", "embedding")
+
     def test_primary_key_sorted_index_columns_preserve_java_split_semantics(self):
         options = CoreOptions(Options({
             "pk-btree.index.columns": "name, id",

@@ -45,8 +45,9 @@ def build_native_global_index(builder, partition_filter, *, execution="local", c
         return None
     native = _native_table(table).new_global_index_build_builder()
     native.with_index_column(builder._index_columns[0]).with_index_type(builder._index_type)
+    resolved_options = builder._options.to_map()
     options = {str(key): _option_value_to_string(value)
-               for key, value in builder._user_options.items() if value is not None}
+               for key, value in resolved_options.items() if value is not None}
     if builder._index_type == 'full-text':
         from pypaimon.globalindex.full_text_options import NativeFullTextIndexOptions
         options.update({'full-text.' + key: value for key, value in
@@ -56,7 +57,7 @@ def build_native_global_index(builder, partition_filter, *, execution="local", c
         column = builder._index_columns[0]
         # Reuse the Java-compatible option mapping; Rust's low-level builder also
         # accepts native aliases which Python's public API deliberately ignores.
-        mapped = native_options(table.field_dict[column].type, table.options.options.to_map(),
+        mapped = native_options(table.field_dict[column].type, resolved_options,
                                 builder._index_type, column, builder._user_options)
         options = {key: value for key, value in options.items()
                    if key in ('global-index.row-count-per-shard', 'global-index.build.parallelism',
@@ -65,7 +66,7 @@ def build_native_global_index(builder, partition_filter, *, execution="local", c
         options.update({'fields.' + column + '.' + key: value for key, value in mapped.items()
                         if key != 'index.type'})
         options['fields.' + column + '.train.sample-ratio'] = str(train_sample_ratio(
-            table.options.options.to_map(), builder._index_type, column, builder._user_options))
+            resolved_options, builder._index_type, column, builder._user_options))
     if builder._index_type == 'full-text' or builder._index_type in VINDEX_IDENTIFIERS:
         # Resolve typed values and explicit default overrides through the same
         # ConfigOption conversion as the local builder before crossing the FFI.

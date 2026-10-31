@@ -137,8 +137,9 @@ def _resolved_schema_file_io_options(table) -> Optional[dict]:
 def _resolved_schema_json(table) -> str:
     """Preserve all effective table options as strings for Rust."""
     from pypaimon.common.json_util import JSON
+    from pypaimon.execution.native.index_options import native_index_options
     options = {str(key): _option_value_to_string(value)
-               for key, value in table.table_schema.options.items() if value is not None}
+               for key, value in native_index_options(table.table_schema).items() if value is not None}
     if 'query-auth.enabled' in options:
         # Preserve Python's effective policy. Forwarding an enabled spelling
         # such as "on" unchanged would disable authorization in Rust.

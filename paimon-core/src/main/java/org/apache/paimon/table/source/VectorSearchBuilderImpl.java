@@ -155,7 +155,8 @@ public class VectorSearchBuilderImpl implements VectorSearchBuilder {
     }
 
     protected boolean isPrimaryKeyVectorSearch() {
-        return vectorColumn != null
+        return !table.schema().primaryKeys().isEmpty()
+                && vectorColumn != null
                 && table.coreOptions().primaryKeyVectorIndexColumns().contains(vectorColumn.name());
     }
 

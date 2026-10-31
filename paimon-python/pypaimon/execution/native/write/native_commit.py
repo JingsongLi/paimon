@@ -20,6 +20,7 @@
 import json
 
 from pypaimon.common.json_util import JSON
+from pypaimon.execution.native.index_options import native_index_options
 from pypaimon.execution.native.runtime import native_runtime_available
 from pypaimon.execution.native.table import (
     _catalog_context_options, _catalog_metastore, _option_value_to_string,
@@ -154,7 +155,7 @@ def create_native_write_table(table):
     # Preserve the resolved schema and all effective table options, including
     # copy() overrides. Do not inject scan options or reload catalog schemas.
     options = {str(key): _option_value_to_string(value)
-               for key, value in table.table_schema.options.items() if value is not None}
+               for key, value in native_index_options(table.table_schema).items() if value is not None}
     # Python accepts boolean spellings such as "off"; pass the parsed value.
     options['dynamic-partition-overwrite'] = _option_value_to_string(
         table.options.dynamic_partition_overwrite())

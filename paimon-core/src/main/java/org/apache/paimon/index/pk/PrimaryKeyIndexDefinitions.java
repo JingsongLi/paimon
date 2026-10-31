@@ -51,12 +51,12 @@ public class PrimaryKeyIndexDefinitions {
         List<String> multiValueColumns = options.primaryKeyMultiValueIndexColumns();
         List<String> fullTextColumns = options.primaryKeyFullTextIndexColumns();
         List<String> fmColumns = options.primaryKeyFMIndexColumns();
-        validateNoDuplicates(vectorColumns, CoreOptions.PK_VECTOR_INDEX_COLUMNS.key());
-        validateNoDuplicates(btreeColumns, CoreOptions.PK_BTREE_INDEX_COLUMNS.key());
-        validateNoDuplicates(bitmapColumns, CoreOptions.PK_BITMAP_INDEX_COLUMNS.key());
-        validateNoDuplicates(multiValueColumns, CoreOptions.PK_MULTIVALUE_INDEX_COLUMNS.key());
-        validateNoDuplicates(fullTextColumns, CoreOptions.PK_FULL_TEXT_INDEX_COLUMNS.key());
-        validateNoDuplicates(fmColumns, CoreOptions.PK_FM_INDEX_COLUMNS.key());
+        validateNoDuplicates(vectorColumns, options.globalIndexColumnsOptionKey("vector"));
+        validateNoDuplicates(btreeColumns, options.globalIndexColumnsOptionKey("btree"));
+        validateNoDuplicates(bitmapColumns, options.globalIndexColumnsOptionKey("bitmap"));
+        validateNoDuplicates(multiValueColumns, options.globalIndexColumnsOptionKey("multivalue"));
+        validateNoDuplicates(fullTextColumns, options.globalIndexColumnsOptionKey("full-text"));
+        validateNoDuplicates(fmColumns, options.globalIndexColumnsOptionKey("fm"));
         validateOneIndexPerColumn(
                 vectorColumns,
                 btreeColumns,

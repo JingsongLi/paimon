@@ -804,7 +804,7 @@ final class SchemaManagerUtils {
 
     static void assertNotUpdatingPrimaryKeyIndexColumn(
             TableSchema schema, String[] fieldNames, String operation) {
-        if (fieldNames.length > 1) {
+        if (fieldNames.length > 1 || schema.primaryKeys().isEmpty()) {
             return;
         }
         String fieldName = fieldNames[0];

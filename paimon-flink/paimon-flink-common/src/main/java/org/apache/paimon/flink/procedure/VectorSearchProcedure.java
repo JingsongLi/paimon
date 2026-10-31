@@ -260,7 +260,8 @@ public class VectorSearchProcedure extends ProcedureBase {
 
     private static void validatePrimaryKeyFilter(
             FileStoreTable table, String vectorColumn, FilterParts filterParts) {
-        if (!table.coreOptions().primaryKeyVectorIndexColumns().contains(vectorColumn)
+        if (table.schema().primaryKeys().isEmpty()
+                || !table.coreOptions().primaryKeyVectorIndexColumns().contains(vectorColumn)
                 || !filterParts.hasDataFilter()) {
             return;
         }

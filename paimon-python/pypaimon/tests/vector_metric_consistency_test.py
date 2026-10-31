@@ -177,6 +177,27 @@ class VectorMetricResolutionTest(unittest.TestCase):
                 self.table, self.column, {'metric': 'cosine'}, kind))
         self.assertEqual('l2', _raw_search_metric(self.table, self.column, {}))
 
+    def test_shared_field_metric_is_used_by_raw_and_indexed_search(self):
+        options = {'global-index.ivf-flat.index-columns': 'embedding',
+                   'ivf-flat.distance.metric': 'l2',
+                   'fields.embedding.index-options': '{"distance.metric":"cosine"}'}
+        self.assertEqual('cosine', _raw_search_metric(self.table, self.column, options, 'ivf-flat'))
+        native = Mock(spec=['vector_metric'])
+        native.vector_metric.return_value = 'cosine'
+        reader = self._reader(options)
+        reader._record_index_metric(native, 'ivf-flat')
+        self.assertEqual('cosine', reader._search_metric('ivf-flat'))
+        native.vector_metric.return_value = 'inner_product'
+        with self.assertRaisesRegex(ValueError, 'does not match index metric'):
+            self._reader(options)._record_index_metric(native, 'ivf-flat')
+
+    def test_unrelated_field_options_do_not_override_persisted_metric(self):
+        native = Mock(spec=['vector_metric'])
+        native.vector_metric.return_value = 'cosine'
+        reader = self._reader({'fields.embedding.index-options': '{"nlist":64}'})
+        reader._record_index_metric(native, 'ivf-flat')
+        self.assertEqual('cosine', reader._search_metric('ivf-flat'))
+
     def test_known_families_ignore_other_columns_metric(self):
         for kind in ('ivf-flat', 'lumina', 'lumina-vector-ann'):
             with self.subTest(index_type=kind):

@@ -1336,6 +1336,15 @@ class VectorSearchFilterTest(unittest.TestCase):
         self.assertEqual(["embedding", "_ROW_ID"], raw_calls["projection"])
         self.assertEqual([0], sorted(list(result.results())))
 
+        table.options = CoreOptions(Options({'fields.embedding.index-options': '{"refine_factor":3,"metric":"l2"}'}))
+        captured_limits.clear()
+        with mock.patch('pypaimon.execution.python.read.search.vector_search_read._create_vector_reader',
+                        side_effect=_fake_create):
+            result = (VectorSearchBuilderImpl(table).with_vector_column('embedding')
+                      .with_query_vector([0.0]).with_limit(1).execute_local())
+        self.assertEqual([3], captured_limits)
+        self.assertEqual([0], sorted(list(result.results())))
+
     def test_refine_factor_one_reranks_without_expanding_candidates(self):
         from pypaimon.globalindex.vector_search_result import (
             DictBasedScoredIndexResult,
@@ -3588,6 +3597,7 @@ class BatchVectorSearchTest(unittest.TestCase):
                        file_name="vec.index",
                        row_range_start=0, row_range_end=2)
         table = _StubTable(fields=[embedding_field], entries=[entry])
+        table.options = CoreOptions(Options({'fields.embedding.index-options': '{"refine_factor":2,"metric":"l2"}'}))
         _patch_snapshot(self, [entry])
         raw_calls = _install_raw_vector_read_builder(
             table, "embedding", {0: [10.0], 1: [0.0], 2: [5.0]})
@@ -3619,7 +3629,6 @@ class BatchVectorSearchTest(unittest.TestCase):
                 .with_vector_column("embedding")
                 .with_query_vectors([[0.0], [20.0]])
                 .with_limit(1)
-                .with_option("ivf.refine_factor", "2")
                 .execute_batch_local()
             )
 

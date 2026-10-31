@@ -110,6 +110,9 @@ class GlobalIndexBuilder:
                 "Python global index build currently supports one column, got %s."
                 % self._index_columns
             )
+        self._options = self._core_options.global_index_options(
+            self._index_type, self._index_columns[0])
+        self._core_options = CoreOptions(self._options)
         if not self._table.options.row_tracking_enabled():
             raise ValueError(
                 "Table '%s' must enable 'row-tracking.enabled=true' before "

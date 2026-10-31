@@ -828,6 +828,66 @@ public class VectorSearchBuilderTest extends TableTestBase {
         assertThat(batchRefined).hasSize(2);
         assertThat(batchRefined.get(0).results()).containsExactly(0L);
         assertThat(batchRefined.get(1).results()).containsExactly(2L);
+
+        FileStoreTable fieldConfigured =
+                table.copy(
+                        Collections.singletonMap(
+                                "fields." + VECTOR_FIELD_NAME + ".index-options",
+                                "{\"refine_factor\":3}"));
+        assertThat(
+                        fieldConfigured
+                                .newVectorSearchBuilder()
+                                .withVector(new float[] {0.0f, 0.0f})
+                                .withLimit(1)
+                                .withVectorColumn(VECTOR_FIELD_NAME)
+                                .executeLocal()
+                                .results())
+                .containsExactly(0L);
+        List<GlobalIndexResult> fieldBatch =
+                fieldConfigured
+                        .newBatchVectorSearchBuilder()
+                        .withVectors(new float[][] {{0.0f, 0.0f}, {20.0f, 0.0f}})
+                        .withLimit(1)
+                        .withVectorColumn(VECTOR_FIELD_NAME)
+                        .executeBatchLocal();
+        assertThat(fieldBatch.get(0).results()).containsExactly(0L);
+        assertThat(fieldBatch.get(1).results()).containsExactly(2L);
+    }
+
+    @Test
+    public void testSharedVectorDeclarationKeepsDataEvolutionReads() throws Exception {
+        catalog.createTable(
+                identifier("declared_vector"),
+                vectorSchemaBuilder(VECTOR_FIELD_NAME)
+                        .option(
+                                "global-index."
+                                        + TestVectorGlobalIndexerFactory.IDENTIFIER
+                                        + ".index-columns",
+                                VECTOR_FIELD_NAME)
+                        .build(),
+                false);
+        FileStoreTable table = getTable(identifier("declared_vector"));
+        float[][] vectors = {{1.0f, 0.0f}, {0.0f, 1.0f}};
+        writeVectors(table, vectors);
+        buildAndCommitIndex(table, vectors);
+
+        assertThat(
+                        table.newVectorSearchBuilder()
+                                .withVector(new float[] {1.0f, 0.0f})
+                                .withLimit(1)
+                                .withVectorColumn(VECTOR_FIELD_NAME)
+                                .executeLocal()
+                                .results())
+                .containsExactly(0L);
+        assertThat(
+                        table.newBatchVectorSearchBuilder()
+                                .withVectors(new float[][] {{0.0f, 1.0f}})
+                                .withLimit(1)
+                                .withVectorColumn(VECTOR_FIELD_NAME)
+                                .executeBatchLocal()
+                                .get(0)
+                                .results())
+                .containsExactly(1L);
     }
 
     @Test

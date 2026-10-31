@@ -403,10 +403,13 @@ public class SchemaValidation {
                 fieldNamesSpecifiedAsVector.isEmpty(),
                 "Some of the columns specified as vector-field are unknown.");
 
-        validatePrimaryKeyIndexColumns(options);
-        validatePrimaryKeySortedIndexes(schema, options);
-        validatePrimaryKeyVectorIndex(schema, options);
-        validatePrimaryKeyFullTextIndex(schema, options);
+        validateGlobalIndexColumns(schema, options);
+        if (!options.dataEvolutionEnabled()) {
+            validatePrimaryKeyIndexColumns(options);
+            validatePrimaryKeySortedIndexes(schema, options);
+            validatePrimaryKeyVectorIndex(schema, options);
+            validatePrimaryKeyFullTextIndex(schema, options);
+        }
 
         validateMergeFunctionFactory(schema);
 
@@ -1226,6 +1229,33 @@ public class SchemaValidation {
         }
     }
 
+    private static void validateGlobalIndexColumns(TableSchema schema, CoreOptions options) {
+        for (String type : options.globalIndexTypes()) {
+            checkArgument(!type.trim().isEmpty(), "Global index type must not be empty.");
+            List<String> columns = options.globalIndexColumns(type);
+            String optionKey = options.globalIndexColumnsOptionKey(type);
+            validateNoDuplicatePrimaryKeyIndexColumns(columns, optionKey);
+            for (String column : columns) {
+                checkArgument(!column.isEmpty(), "%s must contain non-empty columns.", optionKey);
+                checkArgument(
+                        schema.nameToFieldMap().containsKey(column),
+                        "%s entry '%s' must reference an existing column.",
+                        optionKey,
+                        column);
+                options.globalIndexOptions(type, column);
+            }
+        }
+        if (options.dataEvolutionEnabled()) {
+            for (String type :
+                    Arrays.asList("vector", "btree", "bitmap", "multivalue", "full-text", "fm")) {
+                checkArgument(
+                        !schema.options().containsKey("pk-" + type + ".index.columns"),
+                        "pk-%s.index.columns requires a primary-key table; use global-index.<type>.index-columns for Data Evolution tables.",
+                        type);
+            }
+        }
+    }
+
     private static void validatePrimaryKeyVectorIndex(TableSchema schema, CoreOptions options) {
         if (!options.primaryKeyVectorIndexEnabled()) {
             return;
@@ -1234,17 +1264,20 @@ public class SchemaValidation {
         List<String> indexColumns = options.primaryKeyVectorIndexColumns();
         checkArgument(
                 new HashSet<>(indexColumns).size() == indexColumns.size(),
-                "pk-vector.index.columns must not contain duplicate columns, but is %s.",
+                "%s must not contain duplicate columns, but is %s.",
+                options.globalIndexColumnsOptionKey("vector"),
                 indexColumns);
         checkArgument(
                 indexColumns.size() == 1,
-                "pk-vector.index.columns must contain exactly one column in the first release, but is %s.",
+                "%s must contain exactly one column in the first release, but is %s.",
+                options.globalIndexColumnsOptionKey("vector"),
                 indexColumns);
         String indexColumn = indexColumns.get(0);
         String indexType = options.primaryKeyVectorIndexType(indexColumn);
         checkArgument(
                 !StringUtils.isNullOrWhitespaceOnly(indexColumn),
-                "pk-vector.index.columns must contain a non-empty column.");
+                "%s must contain a non-empty column.",
+                options.globalIndexColumnsOptionKey("vector"));
         checkArgument(
                 !StringUtils.isNullOrWhitespaceOnly(indexType),
                 "fields.%s.pk-vector.index.type must be configured when a primary-key vector index is defined.",
@@ -1276,12 +1309,14 @@ public class SchemaValidation {
                         .orElse(null);
         checkArgument(
                 vectorField != null && vectorField.type().getTypeRoot() == VECTOR,
-                "pk-vector.index.columns entry '%s' must reference a VECTOR column.",
+                "%s entry '%s' must reference a VECTOR column.",
+                options.globalIndexColumnsOptionKey("vector"),
                 indexColumn);
         checkArgument(
                 ((VectorType) vectorField.type()).getElementType().getTypeRoot()
                         == DataTypeRoot.FLOAT,
-                "pk-vector.index.columns entry '%s' must use FLOAT elements.",
+                "%s entry '%s' must use FLOAT elements.",
+                options.globalIndexColumnsOptionKey("vector"),
                 indexColumn);
         checkArgument(
                 Arrays.asList("l2", "cosine", "inner_product")
@@ -1300,13 +1335,13 @@ public class SchemaValidation {
         checkArgument(
                 indexColumns.size() == 1,
                 "%s must contain exactly one column in the first release, but is %s.",
-                CoreOptions.PK_FULL_TEXT_INDEX_COLUMNS.key(),
+                options.globalIndexColumnsOptionKey("full-text"),
                 indexColumns);
         String indexColumn = indexColumns.get(0);
         checkArgument(
                 !StringUtils.isNullOrWhitespaceOnly(indexColumn),
                 "%s must contain a non-empty column.",
-                CoreOptions.PK_FULL_TEXT_INDEX_COLUMNS.key());
+                options.globalIndexColumnsOptionKey("full-text"));
         checkArgument(
                 !schema.primaryKeys().isEmpty(),
                 "Primary-key full-text index requires a primary-key table.");
@@ -1327,13 +1362,13 @@ public class SchemaValidation {
         checkArgument(
                 schema.nameToFieldMap().containsKey(indexColumn),
                 "%s entry '%s' must reference an existing column.",
-                CoreOptions.PK_FULL_TEXT_INDEX_COLUMNS.key(),
+                options.globalIndexColumnsOptionKey("full-text"),
                 indexColumn);
         DataTypeRoot typeRoot = schema.nameToFieldMap().get(indexColumn).type().getTypeRoot();
         checkArgument(
                 typeRoot == DataTypeRoot.CHAR || typeRoot == DataTypeRoot.VARCHAR,
                 "%s entry '%s' must reference a CHAR/VARCHAR/STRING column.",
-                CoreOptions.PK_FULL_TEXT_INDEX_COLUMNS.key(),
+                options.globalIndexColumnsOptionKey("full-text"),
                 indexColumn);
         options.primaryKeyFullTextIndexOptions(indexColumn);
     }
@@ -1346,16 +1381,17 @@ public class SchemaValidation {
         List<String> fullTextColumns = options.primaryKeyFullTextIndexColumns();
         List<String> fmColumns = options.primaryKeyFMIndexColumns();
         validateNoDuplicatePrimaryKeyIndexColumns(
-                vectorColumns, CoreOptions.PK_VECTOR_INDEX_COLUMNS.key());
+                vectorColumns, options.globalIndexColumnsOptionKey("vector"));
         validateNoDuplicatePrimaryKeyIndexColumns(
-                btreeColumns, CoreOptions.PK_BTREE_INDEX_COLUMNS.key());
+                btreeColumns, options.globalIndexColumnsOptionKey("btree"));
         validateNoDuplicatePrimaryKeyIndexColumns(
-                bitmapColumns, CoreOptions.PK_BITMAP_INDEX_COLUMNS.key());
+                bitmapColumns, options.globalIndexColumnsOptionKey("bitmap"));
         validateNoDuplicatePrimaryKeyIndexColumns(
-                multiValueColumns, CoreOptions.PK_MULTIVALUE_INDEX_COLUMNS.key());
+                multiValueColumns, options.globalIndexColumnsOptionKey("multivalue"));
         validateNoDuplicatePrimaryKeyIndexColumns(
-                fullTextColumns, CoreOptions.PK_FULL_TEXT_INDEX_COLUMNS.key());
-        validateNoDuplicatePrimaryKeyIndexColumns(fmColumns, CoreOptions.PK_FM_INDEX_COLUMNS.key());
+                fullTextColumns, options.globalIndexColumnsOptionKey("full-text"));
+        validateNoDuplicatePrimaryKeyIndexColumns(
+                fmColumns, options.globalIndexColumnsOptionKey("fm"));
 
         Set<String> indexedColumns = new HashSet<>();
         validateUniquePrimaryKeyIndexColumns(indexedColumns, vectorColumns);
@@ -1414,17 +1450,19 @@ public class SchemaValidation {
         validatePrimaryKeySortedIndexColumns(
                 schema,
                 options.primaryKeyBTreeIndexColumns(),
-                CoreOptions.PK_BTREE_INDEX_COLUMNS.key());
+                options.globalIndexColumnsOptionKey("btree"));
         validatePrimaryKeySortedIndexColumns(
                 schema,
                 options.primaryKeyBitmapIndexColumns(),
-                CoreOptions.PK_BITMAP_INDEX_COLUMNS.key());
+                options.globalIndexColumnsOptionKey("bitmap"));
         validatePrimaryKeySortedIndexColumns(
                 schema,
                 options.primaryKeyMultiValueIndexColumns(),
-                CoreOptions.PK_MULTIVALUE_INDEX_COLUMNS.key());
+                options.globalIndexColumnsOptionKey("multivalue"));
         validatePrimaryKeySortedIndexColumns(
-                schema, options.primaryKeyFMIndexColumns(), CoreOptions.PK_FM_INDEX_COLUMNS.key());
+                schema,
+                options.primaryKeyFMIndexColumns(),
+                options.globalIndexColumnsOptionKey("fm"));
 
         Map<String, DataField> fields = schema.nameToFieldMap();
         for (String column : options.primaryKeyBTreeIndexColumns()) {

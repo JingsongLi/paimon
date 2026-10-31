@@ -313,7 +313,7 @@ class AbstractVectorSearchReadImpl:
             self._table.file_io,
             self._table.path_factory().global_index_path_factory().index_path(),
             index_io_meta_list,
-            self._table.table_schema.options,
+            self._resolved_index_options(vector_index_files[0].index_type),
         )
         try:
             self._record_index_metric(reader, vector_index_files[0].index_type, metric_lock)
@@ -655,12 +655,17 @@ class AbstractVectorSearchReadImpl:
                 del batch, row_ids, vectors
         return [_scored_result(heap) for heap in heaps]
 
+    def _resolved_index_options(self, index_type):
+        values = dict(_table_options_map(self._table))
+        values.update(self._options)
+        return CoreOptions(Options(values)).global_index_options(index_type, self._vector_column.name).to_map()
+
     def _configured_refine_factor(self, index_type):
         value = _configured_refine_factor(
             self._options, self._vector_column.name, index_type)
         if value is None:
             value = _configured_refine_factor(
-                _table_options_map(self._table), self._vector_column.name, index_type)
+                self._resolved_index_options(index_type), self._vector_column.name, index_type)
         if value is None:
             return 0
         try:
@@ -986,6 +991,12 @@ def _table_options_map(table):
 
 def _configured_vector_metric(options, vector_column, index_type=None):
     field_prefix = "fields.%s." % vector_column.name
+    if field_prefix + "index-options" in options:
+        core = CoreOptions(Options(options))
+        selected_type = index_type or core.primary_key_vector_index_type(vector_column.name) or "vector"
+        metric = core.global_index_options(selected_type, vector_column.name, default_metric=False).to_map().get(selected_type + ".metric")
+        if metric is not None:
+            return metric
     index_prefix = "%s." % index_type if index_type else None
     keys = [field_prefix + "pk-vector.distance.metric",
             field_prefix + "distance.metric", field_prefix + "metric"]

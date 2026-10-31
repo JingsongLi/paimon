@@ -241,16 +241,7 @@ def _vector_index_type(vector_column, index_files):
 
 
 def _configured_vector_index_type(table, vector_column, options):
-    keys = [
-        "index_type",
-        "index-type",
-        "vector.index-type",
-        "fields.%s.index-type" % vector_column.name,
-    ]
     table_options = getattr(getattr(table, "options", None), "options", None)
-    table_map = table_options.to_map() if table_options is not None else {}
-    for key in keys:
-        value = options.get(key) or table_map.get(key)
-        if value is not None:
-            return str(value).lower().strip()
-    return None
+    values = dict(table_options.to_map()) if table_options is not None else {}
+    values.update(options)
+    return CoreOptions(Options(values)).vector_index_type(vector_column.name)

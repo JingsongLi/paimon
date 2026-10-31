@@ -38,8 +38,11 @@ import org.apache.paimon.utils.MathUtils;
 import org.apache.paimon.utils.Pair;
 import org.apache.paimon.utils.StringUtils;
 
+import org.apache.paimon.shade.jackson2.com.fasterxml.jackson.databind.JsonNode;
+
 import javax.annotation.Nullable;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.time.Duration;
@@ -49,6 +52,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -56,7 +60,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -3211,6 +3214,46 @@ public class CoreOptions implements Serializable {
                             "The batch size for lateral vector search. Each batch executes vector "
                                     + "topK search and table lookup for multiple query vectors.");
 
+    public static final ConfigOption<String> GLOBAL_INDEX_BTREE_INDEX_COLUMNS =
+            key("global-index.btree.index-columns")
+                    .stringType()
+                    .noDefaultValue()
+                    .withFallbackKeys("global-index.btree.index-column", "pk-btree.index.columns")
+                    .withDescription("Comma-separated columns to index with BTree indexes.");
+
+    public static final ConfigOption<String> GLOBAL_INDEX_BITMAP_INDEX_COLUMNS =
+            key("global-index.bitmap.index-columns")
+                    .stringType()
+                    .noDefaultValue()
+                    .withFallbackKeys("global-index.bitmap.index-column", "pk-bitmap.index.columns")
+                    .withDescription("Comma-separated columns to index with Bitmap indexes.");
+
+    public static final ConfigOption<String> GLOBAL_INDEX_MULTIVALUE_INDEX_COLUMNS =
+            key("global-index.multivalue.index-columns")
+                    .stringType()
+                    .noDefaultValue()
+                    .withFallbackKeys(
+                            "global-index.multivalue.index-column", "pk-multivalue.index.columns")
+                    .withDescription(
+                            "Comma-separated ARRAY columns to index with Multivalue indexes.");
+
+    public static final ConfigOption<String> GLOBAL_INDEX_FULL_TEXT_INDEX_COLUMNS =
+            key("global-index.full-text.index-columns")
+                    .stringType()
+                    .noDefaultValue()
+                    .withFallbackKeys(
+                            "global-index.full-text.index-column", "pk-full-text.index.columns")
+                    .withDescription(
+                            "Comma-separated character columns to index with full-text indexes.");
+
+    public static final ConfigOption<String> GLOBAL_INDEX_FM_INDEX_COLUMNS =
+            key("global-index.fm.index-columns")
+                    .stringType()
+                    .noDefaultValue()
+                    .withFallbackKeys("global-index.fm.index-column", "pk-fm.index.columns")
+                    .withDescription("Comma-separated character columns to index with FM indexes.");
+
+    // Retain these option keys for applications using the primary-key index API.
     public static final ConfigOption<String> PK_VECTOR_INDEX_COLUMNS =
             key("pk-vector.index.columns")
                     .stringType()
@@ -5048,145 +5091,292 @@ public class CoreOptions implements Serializable {
     }
 
     public boolean primaryKeyVectorIndexEnabled() {
-        return options.getOptional(PK_VECTOR_INDEX_COLUMNS).isPresent();
+        return !primaryKeyVectorIndexColumns().isEmpty();
     }
 
     public boolean primaryKeyFullTextIndexEnabled() {
-        return options.getOptional(PK_FULL_TEXT_INDEX_COLUMNS).isPresent();
+        return !primaryKeyFullTextIndexColumns().isEmpty();
     }
 
     public boolean primaryKeyFMIndexEnabled() {
-        return options.getOptional(PK_FM_INDEX_COLUMNS).isPresent();
+        return !primaryKeyFMIndexColumns().isEmpty();
     }
 
     public List<String> primaryKeyVectorIndexColumns() {
-        return primaryKeyIndexColumns(PK_VECTOR_INDEX_COLUMNS);
+        List<String> types = vectorIndexTypes();
+        if (!types.isEmpty()) {
+            return types.stream()
+                    .flatMap(type -> globalIndexColumns(type).stream())
+                    .collect(Collectors.toList());
+        }
+        return indexColumns(options.get(PK_VECTOR_INDEX_COLUMNS));
     }
 
     public List<String> primaryKeyBTreeIndexColumns() {
-        return primaryKeyIndexColumns(PK_BTREE_INDEX_COLUMNS);
+        return globalIndexColumns("btree");
     }
 
     public List<String> primaryKeyBitmapIndexColumns() {
-        return primaryKeyIndexColumns(PK_BITMAP_INDEX_COLUMNS);
+        return globalIndexColumns("bitmap");
     }
 
     public List<String> primaryKeyMultiValueIndexColumns() {
-        return primaryKeyIndexColumns(PK_MULTIVALUE_INDEX_COLUMNS);
+        return globalIndexColumns("multivalue");
     }
 
     public List<String> primaryKeyFullTextIndexColumns() {
-        return primaryKeyIndexColumns(PK_FULL_TEXT_INDEX_COLUMNS);
+        return globalIndexColumns("full-text");
     }
 
     public List<String> primaryKeyFMIndexColumns() {
-        return primaryKeyIndexColumns(PK_FM_INDEX_COLUMNS);
+        return globalIndexColumns("fm");
     }
 
-    private List<String> primaryKeyIndexColumns(ConfigOption<String> option) {
-        String columns = options.get(option);
+    /** Index implementation identifiers declared with {@code global-index.<type>.index-columns}. */
+    public List<String> globalIndexTypes() {
+        String prefix = "global-index.";
+        return options.toMap().keySet().stream()
+                .filter(
+                        k ->
+                                k.startsWith(prefix)
+                                        && k.lastIndexOf('.') >= prefix.length()
+                                        && (k.endsWith(".index-columns")
+                                                || k.endsWith(".index-column")))
+                .map(k -> k.substring(prefix.length(), k.lastIndexOf('.')))
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+    }
+
+    private static boolean isVectorIndexType(String type) {
+        return !Arrays.asList("btree", "bitmap", "multivalue", "full-text", "fm").contains(type);
+    }
+
+    private List<String> vectorIndexTypes() {
+        return globalIndexTypes().stream()
+                .filter(CoreOptions::isVectorIndexType)
+                .collect(Collectors.toList());
+    }
+
+    public List<String> globalIndexColumns(String type) {
+        String columns = options.get("global-index." + type + ".index-columns");
         if (columns == null) {
-            return Collections.emptyList();
+            columns = options.get("global-index." + type + ".index-column");
         }
-        return Arrays.stream(columns.split(",", -1)).map(String::trim).collect(Collectors.toList());
+        if (columns == null) {
+            columns = options.get("pk-" + type + ".index.columns");
+        }
+        if (columns != null) {
+            return indexColumns(columns);
+        }
+        return indexColumns(options.get(PK_VECTOR_INDEX_COLUMNS)).stream()
+                .filter(
+                        column ->
+                                type.equals(
+                                        options.get("fields." + column + ".pk-vector.index.type")))
+                .collect(Collectors.toList());
     }
 
-    public Options primaryKeyBTreeIndexOptions(String column) {
-        return primaryKeySortedIndexOptions(column, "pk-btree", "btree-index.");
+    private static List<String> indexColumns(@Nullable String columns) {
+        return columns == null
+                ? Collections.emptyList()
+                : Arrays.stream(columns.split(",", -1))
+                        .map(String::trim)
+                        .collect(Collectors.toList());
     }
 
-    public Options primaryKeyBitmapIndexOptions(String column) {
-        return primaryKeySortedIndexOptions(column, "pk-bitmap", "bitmap-index.");
+    public String globalIndexColumnsOptionKey(String type) {
+        if ("vector".equals(type) && !vectorIndexTypes().isEmpty()) {
+            return vectorIndexTypes().stream()
+                    .map(
+                            t ->
+                                    "global-index."
+                                            + t
+                                            + (options.get("global-index." + t + ".index-columns")
+                                                            != null
+                                                    ? ".index-columns"
+                                                    : ".index-column"))
+                    .collect(Collectors.joining(", "));
+        }
+        for (String suffix : Arrays.asList(".index-columns", ".index-column")) {
+            String key = "global-index." + type + suffix;
+            if (options.get(key) != null) {
+                return key;
+            }
+        }
+        String legacy = "pk-" + type + ".index.columns";
+        return options.get(legacy) != null ? legacy : "global-index." + type + ".index-columns";
     }
 
-    public Options primaryKeyMultiValueIndexOptions(String column) {
-        return primaryKeySortedIndexOptions(column, "pk-multivalue", "multivalue-index.");
+    /**
+     * Resolves implementation defaults and field overrides for either table mode.
+     *
+     * <p>The shared field JSON object takes precedence over the legacy JSON object. Short keys are
+     * qualified with the implementation's existing option prefix.
+     */
+    public Options globalIndexOptions(@Nullable String type, String column) {
+        return globalIndexOptions(type, column, true);
     }
 
-    public Options primaryKeyFMIndexOptions(String column) {
-        return primaryKeySortedIndexOptions(column, "pk-fm", "fm-index.");
-    }
-
-    public Options primaryKeyFullTextIndexOptions(String column) {
-        String optionKey = "fields." + column + ".pk-full-text.index.options";
-        TreeMap<String, String> resolved = new TreeMap<>();
-        for (Map.Entry<String, String> entry : toConfiguration().toMap().entrySet()) {
-            if (entry.getKey().startsWith("full-text.")) {
-                resolved.put(entry.getKey(), entry.getValue());
+    /** The same resolver, optionally retaining the absence of an explicitly configured metric. */
+    public Options globalIndexOptions(@Nullable String type, String column, boolean defaultMetric) {
+        Options resolved = new Options(options.toMap(), options);
+        if (type == null) {
+            type = vectorIndexType(column);
+            if (type == null) {
+                return resolved;
+            }
+        }
+        boolean vector = isVectorIndexType(type);
+        String prefix = vector || "full-text".equals(type) ? type + "." : type + "-index.";
+        String fieldPrefix = "fields." + column + ".";
+        String sharedKey = fieldPrefix + "index-options";
+        boolean shared = options.get(sharedKey) != null;
+        String optionKey =
+                shared
+                        ? sharedKey
+                        : fieldPrefix + "pk-" + (vector ? "vector" : type) + ".index.options";
+        String metric = null;
+        if (vector) {
+            for (String key :
+                    Arrays.asList(
+                            fieldPrefix + "distance.metric",
+                            fieldPrefix + "metric",
+                            fieldPrefix + "pk-vector.distance.metric",
+                            prefix + "distance.metric",
+                            prefix + "metric",
+                            "distance.metric",
+                            "metric")) {
+                if (options.get(key) != null) {
+                    metric = options.get(key);
+                    break;
+                }
             }
         }
 
         String serialized = options.get(optionKey);
-        if (serialized == null || serialized.trim().isEmpty()) {
-            return new Options(resolved);
+        if (serialized != null && !serialized.trim().isEmpty()) {
+            for (Map.Entry<String, String> entry :
+                    parseIndexOptions(serialized, optionKey, type).entrySet()) {
+                String key = entry.getKey();
+                String value = entry.getValue();
+                checkArgument(
+                        key != null && !key.trim().isEmpty(),
+                        "%s contains an empty option key.",
+                        optionKey);
+                checkArgument(
+                        value != null, "%s value for key %s must not be null.", optionKey, key);
+                String qualified =
+                        key.startsWith(prefix) || key.startsWith("fields.") ? key : prefix + key;
+                boolean metricOption =
+                        vector
+                                && (qualified.equals(prefix + "metric")
+                                        || qualified.equals(prefix + "distance.metric")
+                                        || qualified.equals(fieldPrefix + "metric")
+                                        || qualified.equals(fieldPrefix + "distance.metric"));
+                String previous = resolved.get(qualified);
+                if (metricOption) {
+                    value = normalizeVectorMetric(value);
+                    previous = previous == null ? null : normalizeVectorMetric(previous);
+                }
+                checkArgument(
+                        shared || previous == null || previous.equals(value),
+                        "%s defines conflicting values for %s.",
+                        optionKey,
+                        qualified);
+                resolved.setString(qualified, value);
+                if (metricOption) {
+                    metric = value;
+                } else if (vector && qualified.startsWith(prefix)) {
+                    String shortKey = qualified.substring(prefix.length());
+                    if (shared) {
+                        // Native vector implementations also accept the flat field syntax.
+                        resolved.setString(fieldPrefix + shortKey, value);
+                    }
+                }
+            }
         }
+        if (vector && (metric != null || defaultMetric)) {
+            metric = normalizeVectorMetric(metric);
+            // Keep both accepted aliases consistent for implementations using either spelling.
+            resolved.setString(prefix + "metric", metric);
+            resolved.setString(prefix + "distance.metric", metric);
+            resolved.setString(fieldPrefix + "metric", metric);
+            resolved.setString(fieldPrefix + "distance.metric", metric);
+        }
+        return resolved;
+    }
 
-        LinkedHashMap<String, String> parsed;
+    private static LinkedHashMap<String, String> parseIndexOptions(
+            String serialized, String optionKey, String type) {
+        if (!optionKey.endsWith(".index-options")) {
+            try {
+                return JsonSerdeUtil.parseJsonMap(serialized, String.class);
+            } catch (RuntimeException e) {
+                throw new IllegalArgumentException(
+                        optionKey + " must be a JSON object of option key-value pairs.", e);
+            }
+        }
         try {
-            parsed = JsonSerdeUtil.parseJsonMap(serialized, String.class);
-        } catch (RuntimeException e) {
+            JsonNode root = JsonSerdeUtil.OBJECT_MAPPER_INSTANCE.readTree(serialized);
+            checkArgument(
+                    root != null && root.isObject(),
+                    "%s must be a JSON object of option key-value pairs.",
+                    optionKey);
+            LinkedHashMap<String, String> parsed = new LinkedHashMap<>();
+            Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                checkArgument(
+                        !entry.getValue().isNull(),
+                        "%s value for key %s must not be null.",
+                        optionKey,
+                        entry.getKey());
+                if ("full-text".equals(type) && entry.getValue().isArray()) {
+                    List<String> values = new ArrayList<>();
+                    entry.getValue().forEach(value -> values.add(value.asText()));
+                    parsed.put(entry.getKey(), String.join(";", values));
+                } else {
+                    parsed.put(
+                            entry.getKey(),
+                            entry.getValue().isValueNode()
+                                    ? entry.getValue().asText()
+                                    : entry.getValue().toString());
+                }
+            }
+            return parsed;
+        } catch (IOException e) {
             throw new IllegalArgumentException(
                     optionKey + " must be a JSON object of option key-value pairs.", e);
         }
+    }
 
-        for (Map.Entry<String, String> entry : parsed.entrySet()) {
-            String key = entry.getKey();
-            String value = entry.getValue();
-            checkArgument(
-                    key != null && !key.trim().isEmpty(),
-                    "%s contains an empty option key.",
-                    optionKey);
-            checkArgument(value != null, "%s value for key %s must not be null.", optionKey, key);
-            String qualifiedKey = key.startsWith("full-text.") ? key : "full-text." + key;
-            String previous = resolved.put(qualifiedKey, value);
-            checkArgument(
-                    previous == null || previous.equals(value),
-                    "%s defines conflicting values for %s.",
-                    optionKey,
-                    qualifiedKey);
-        }
+    public Options primaryKeyBTreeIndexOptions(String column) {
+        return primaryKeySortedIndexOptions(column, "btree");
+    }
+
+    public Options primaryKeyBitmapIndexOptions(String column) {
+        return primaryKeySortedIndexOptions(column, "bitmap");
+    }
+
+    public Options primaryKeyMultiValueIndexOptions(String column) {
+        return primaryKeySortedIndexOptions(column, "multivalue");
+    }
+
+    public Options primaryKeyFMIndexOptions(String column) {
+        return primaryKeySortedIndexOptions(column, "fm");
+    }
+
+    public Options primaryKeyFullTextIndexOptions(String column) {
+        Map<String, String> resolved = globalIndexOptions("full-text", column).toMap();
+        resolved.keySet().removeIf(key -> !key.startsWith("full-text."));
         return new Options(resolved);
     }
 
-    private Options primaryKeySortedIndexOptions(
-            String column, String optionFamily, String algorithmPrefix) {
-        Options resolved = new Options(toConfiguration().toMap());
+    private Options primaryKeySortedIndexOptions(String column, String type) {
+        Options resolved = globalIndexOptions(type, column);
         resolved.remove("sorted-index.records-per-file");
         resolved.remove("sorted-index.records-per-range");
-        String optionKey = "fields." + column + "." + optionFamily + ".index.options";
-        String serialized = options.get(optionKey);
-        if (serialized == null || serialized.trim().isEmpty()) {
-            return resolved;
-        }
-
-        LinkedHashMap<String, String> parsed;
-        try {
-            parsed = JsonSerdeUtil.parseJsonMap(serialized, String.class);
-        } catch (RuntimeException e) {
-            throw new IllegalArgumentException(
-                    optionKey + " must be a JSON object of option key-value pairs.", e);
-        }
-
-        for (Map.Entry<String, String> entry : parsed.entrySet()) {
-            String key = entry.getKey();
-            String value = entry.getValue();
-            checkArgument(
-                    key != null && !key.trim().isEmpty(),
-                    "%s contains an empty option key.",
-                    optionKey);
-            checkArgument(value != null, "%s value for key %s must not be null.", optionKey, key);
-            String qualifiedKey =
-                    key.startsWith(algorithmPrefix) || key.startsWith("fields.")
-                            ? key
-                            : algorithmPrefix + key;
-            String previous = resolved.get(qualifiedKey);
-            checkArgument(
-                    previous == null || previous.equals(value),
-                    "%s defines conflicting values for %s.",
-                    optionKey,
-                    qualifiedKey);
-            resolved.setString(qualifiedKey, value);
-        }
         return resolved;
     }
 
@@ -5194,87 +5384,59 @@ public class CoreOptions implements Serializable {
         List<String> columns = primaryKeyVectorIndexColumns();
         checkArgument(
                 columns.size() == 1,
-                "pk-vector.index.columns must contain exactly one column in the first release, but is %s.",
+                "%s must contain exactly one column in the first release, but is %s.",
+                globalIndexColumnsOptionKey("vector"),
                 columns);
         return columns.get(0);
     }
 
     @Nullable
     public String primaryKeyVectorIndexType(String column) {
-        return options.get("fields." + column + ".pk-vector.index.type");
+        return vectorIndexType(column);
     }
 
     @Nullable
-    private String primaryKeyVectorIndexOptionsJson(String column) {
-        return options.get("fields." + column + ".pk-vector.index.options");
+    public String vectorIndexType(String column) {
+        List<String> declared =
+                vectorIndexTypes().stream()
+                        .filter(type -> globalIndexColumns(type).contains(column))
+                        .collect(Collectors.toList());
+        if (!declared.isEmpty()) {
+            return declared.size() == 1 ? declared.get(0) : null;
+        }
+        for (String key :
+                Arrays.asList(
+                        "fields." + column + ".pk-vector.index.type",
+                        "index_type",
+                        "index-type",
+                        "vector.index-type",
+                        "fields." + column + ".index-type")) {
+            String type = options.get(key);
+            if (type != null) {
+                return type.toLowerCase(Locale.ROOT).trim();
+            }
+        }
+        return null;
     }
 
     public Options primaryKeyVectorIndexOptions(String column) {
-        Options resolved = new Options(toConfiguration().toMap());
-        for (Map.Entry<String, String> option :
-                primaryKeyVectorAlgorithmOptions(column).entrySet()) {
-            resolved.setString(option.getKey(), option.getValue());
-        }
-        return resolved;
-    }
-
-    private Map<String, String> primaryKeyVectorAlgorithmOptions(String column) {
-        String indexTypeKey = "fields." + column + ".pk-vector.index.type";
-        String indexOptionsKey = "fields." + column + ".pk-vector.index.options";
-        String algorithm = primaryKeyVectorIndexType(column);
+        String type = primaryKeyVectorIndexType(column);
         checkArgument(
-                algorithm != null && !algorithm.trim().isEmpty(),
-                "%s must be configured before resolving index options.",
-                indexTypeKey);
-        TreeMap<String, String> algorithmOptions = new TreeMap<>();
-        String algorithmPrefix = algorithm + ".";
-        String fieldPrefix = "fields." + column + ".";
-        for (Map.Entry<String, String> entry : toConfiguration().toMap().entrySet()) {
-            if (entry.getKey().startsWith(algorithmPrefix)
-                    || (entry.getKey().startsWith(fieldPrefix)
-                            && !entry.getKey().startsWith(fieldPrefix + "pk-vector."))) {
-                algorithmOptions.put(entry.getKey(), entry.getValue());
-            }
-        }
-        String serialized = primaryKeyVectorIndexOptionsJson(column);
-        if (serialized != null && !serialized.trim().isEmpty()) {
-            LinkedHashMap<String, String> parsed;
-            try {
-                parsed = JsonSerdeUtil.parseJsonMap(serialized, String.class);
-            } catch (RuntimeException e) {
-                throw new IllegalArgumentException(
-                        indexOptionsKey + " must be a JSON object of option key-value pairs.", e);
-            }
-            for (Map.Entry<String, String> entry : parsed.entrySet()) {
-                String key = entry.getKey();
-                String value = entry.getValue();
-                checkArgument(
-                        key != null && !key.trim().isEmpty(),
-                        "%s contains an empty option key.",
-                        indexOptionsKey);
-                checkArgument(
-                        value != null,
-                        "%s value for key %s must not be null.",
-                        indexOptionsKey,
-                        key);
-                String qualifiedKey =
-                        key.startsWith(algorithmPrefix) || key.startsWith("fields.")
-                                ? key
-                                : algorithmPrefix + key;
-                String previous = algorithmOptions.put(qualifiedKey, value);
-                checkArgument(
-                        previous == null || previous.equals(value),
-                        "%s defines conflicting values for %s.",
-                        indexOptionsKey,
-                        qualifiedKey);
-            }
-        }
-        algorithmOptions.put(algorithmPrefix + "metric", primaryKeyVectorDistanceMetric(column));
-        return algorithmOptions;
+                type != null && !type.trim().isEmpty(),
+                "fields.%s.pk-vector.index.type must be configured before resolving index options.",
+                column);
+        return globalIndexOptions(type, column);
     }
 
     public String primaryKeyVectorDistanceMetric(String column) {
-        String metric = options.get("fields." + column + ".pk-vector.distance.metric");
+        String type = primaryKeyVectorIndexType(column);
+        return type == null
+                ? normalizeVectorMetric(
+                        options.get("fields." + column + ".pk-vector.distance.metric"))
+                : globalIndexOptions(type, column).get(type + ".metric");
+    }
+
+    private static String normalizeVectorMetric(String metric) {
         return (metric == null ? "inner_product" : metric)
                 .toLowerCase(Locale.ROOT)
                 .replace('-', '_');
