@@ -22,8 +22,10 @@ import org.apache.paimon.data.BinaryString;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.data.Timestamp;
+import org.apache.paimon.disk.IOManagerImpl;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
+import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.reader.RecordReaderIterator;
 import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.schema.Schema;
@@ -45,7 +47,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -99,13 +100,6 @@ class GeneratedPartitionColumnTest {
             assertThatThrownBy(
                             () -> write.write(GenericRow.of(3, null, Timestamp.fromEpochMillis(0))))
                     .hasMessageContaining("Cannot write null to non-null column(dt)");
-            assertThatThrownBy(
-                            () ->
-                                    write.withWriteType(
-                                            RowType.of(
-                                                    reopened.rowType().getField("id"),
-                                                    reopened.rowType().getField("dt"))))
-                    .hasMessageContaining("Missing input column 'ts'");
             commit.commit(write.prepareCommit());
         }
         rows.clear();
@@ -148,6 +142,119 @@ class GeneratedPartitionColumnTest {
                 .hasMessageContaining("cannot have a default value");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"partial-update", "aggregation", "first-row"})
+    void testGeneratedValuesFollowMergeEngine(String engine) throws Exception {
+        Schema.Builder schema =
+                Schema.newBuilder()
+                        .column("id", DataTypes.INT())
+                        .column("value", DataTypes.INT())
+                        .generatedColumn("copy", DataTypes.BIGINT(), "CAST(value AS BIGINT)")
+                        .primaryKey("id")
+                        .option("bucket", "1")
+                        .option("merge-engine", engine);
+        if (engine.equals("aggregation")) {
+            schema.option("fields.value.aggregate-function", "sum")
+                    .option("fields.copy.aggregate-function", "sum");
+        }
+        Path path = new Path(tempDir.resolve(UUID.randomUUID().toString()).toUri());
+        new FileSystemSchemaManager(LocalFileIO.create(), path).createTable(schema.build());
+        FileStoreTable table = FileStoreTableFactory.create(LocalFileIO.create(), path);
+        for (int step = 0; step < 3; step++) {
+            BatchWriteBuilder builder = table.newBatchWriteBuilder();
+            try (IOManagerImpl ioManager = new IOManagerImpl(tempDir.toString());
+                    BatchTableWrite write = builder.newWrite();
+                    BatchTableCommit commit = builder.newCommit()) {
+                write.withIOManager(ioManager);
+                if (step == 0) {
+                    write.withWriteType(table.rowType().project("id", "value"));
+                    write.write(GenericRow.of(1, 10));
+                } else {
+                    write.write(
+                            step == 1 ? GenericRow.of(1, 20, null) : GenericRow.of(1, null, 99L));
+                }
+                commit.commit(write.prepareCommit());
+            }
+        }
+        try (RecordReaderIterator<InternalRow> rows =
+                new RecordReaderIterator<>(table.newRead().createReader(table.newScan().plan()))) {
+            InternalRow row = rows.next();
+            assertThat(row.getInt(1))
+                    .isEqualTo(
+                            engine.equals("aggregation")
+                                    ? 30
+                                    : engine.equals("first-row") ? 10 : 20);
+            assertThat(row.getLong(2))
+                    .isEqualTo(
+                            engine.equals("aggregation")
+                                    ? 109L
+                                    : engine.equals("first-row") ? 10L : 99L);
+            assertThat(rows.hasNext()).isFalse();
+        }
+    }
+
+    @Test
+    void testDataEvolutionPartialWriteKeepsUnselectedGeneratedValues() throws Exception {
+        Schema schema =
+                Schema.newBuilder()
+                        .column("id", DataTypes.INT())
+                        .column("name", DataTypes.STRING())
+                        .generatedColumn("label", DataTypes.STRING(), "UPPER(name)")
+                        .option("row-tracking.enabled", "true")
+                        .option("data-evolution.enabled", "true")
+                        .build();
+        Path path = new Path(tempDir.resolve(UUID.randomUUID().toString()).toUri());
+        new FileSystemSchemaManager(LocalFileIO.create(), path).createTable(schema);
+        FileStoreTable table = FileStoreTableFactory.create(LocalFileIO.create(), path);
+        String[] expectedNames = {"old", "new", "new"};
+        String[] expectedLabels = {"OLD", "OLD", "external"};
+        for (int step = 0; step < 3; step++) {
+            BatchWriteBuilder builder = table.newBatchWriteBuilder();
+            try (BatchTableWrite write = builder.newWrite();
+                    BatchTableCommit commit = builder.newCommit()) {
+                // Switching from a partial layout must restore omitted-column generation.
+                if (step == 0) {
+                    write.withWriteType(table.rowType().project("label"));
+                }
+                write.withWriteType(
+                        table.rowType()
+                                .project(
+                                        step == 0
+                                                ? new String[] {"id", "name"}
+                                                : step == 1
+                                                        ? new String[] {"name"}
+                                                        : new String[] {"label"}));
+                write.write(
+                        step == 0
+                                ? GenericRow.of(1, BinaryString.fromString("old"))
+                                : GenericRow.of(
+                                        BinaryString.fromString(step == 1 ? "new" : "external")));
+                List<CommitMessage> messages = write.prepareCommit();
+                if (step > 0) {
+                    for (CommitMessage message : messages) {
+                        List<DataFileMeta> files =
+                                ((CommitMessageImpl) message).newFilesIncrement().newFiles();
+                        List<DataFileMeta> originals = new ArrayList<>(files);
+                        files.clear();
+                        for (DataFileMeta file : originals) {
+                            files.add(file.assignFirstRowId(0));
+                        }
+                    }
+                }
+                commit.commit(messages);
+            }
+            try (RecordReaderIterator<InternalRow> rows =
+                    new RecordReaderIterator<>(
+                            table.newRead().createReader(table.newScan().plan()))) {
+                InternalRow row = rows.next();
+                assertThat(row.getInt(0)).isEqualTo(1);
+                assertThat(row.getString(1).toString()).isEqualTo(expectedNames[step]);
+                assertThat(row.getString(2).toString()).isEqualTo(expectedLabels[step]);
+                assertThat(rows.hasNext()).isFalse();
+            }
+        }
+    }
+
     @Test
     void testRejectInvalidDefinitions() {
         Schema plain =
@@ -164,11 +271,6 @@ class GeneratedPartitionColumnTest {
                         .build();
         assertThatThrownBy(() -> validate(defaults))
                 .hasMessageContaining("cannot have a default value");
-        for (String engine : Arrays.asList("partial-update", "aggregation", "first-row")) {
-            Schema merge = schema(true).option("merge-engine", engine).build();
-            assertThatThrownBy(() -> validate(merge))
-                    .hasMessageContaining("deduplicate merge engine");
-        }
         Schema nested =
                 Schema.newBuilder()
                         .column(

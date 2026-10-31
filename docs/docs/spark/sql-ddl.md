@@ -92,7 +92,7 @@ Omit `primary-key` to create an append table. For storage layout and table optio
 
 ### Generated Columns
 
-On Spark 3.5 with `org.apache.paimon.spark.SparkCatalog`, define physical top-level columns
+On Spark 3.5 and Spark 4 with `org.apache.paimon.spark.SparkCatalog`, define physical top-level columns
 with `GENERATED ALWAYS AS`:
 
 ```sql
@@ -119,8 +119,10 @@ Spark uses the same evaluator as the core writer for omitted columns, applying s
 defaults first. CAST formatting, conversion errors, and argument bounds follow Paimon transforms
 rather than session-dependent Spark rules. The two-argument TRIM/LTRIM/RTRIM form takes
 `(characters, string)`.
-Ordinary append inserts and primary-key deduplicate writes are supported; existing
-primary-key and partition constraints still apply. Partial-column writes are not supported.
+Ordinary append inserts, all primary-key merge engines, and Data Evolution partial-column updates
+are supported; existing primary-key, partition, and merge-engine rules still apply. Generated
+values are filled before primary-key merging and are not recomputed after the merge. A partial
+update preserves unselected generated columns, even when their source columns change.
 
 Supported calls include `CAST`, `YEAR`, `MONTH`, `DAY`/`DAYOFMONTH`, `HOUR`, `MINUTE`, `SECOND`,
 `QUARTER`, `DAYOFWEEK`, `DAYOFYEAR`, `WEEKDAY`, `WEEKOFYEAR`, `DATE_ADD`, `DATEDIFF`/`DATE_DIFF`,
@@ -139,7 +141,9 @@ through this evaluator.
 
 The Java schema builder exposes `generatedColumn(name, type, expression)`. Java writers can call
 `withWriteType` with all ordinary fields to omit generated fields from input rows. The
-writer fills in the generated fields and writes the full table schema.
+writer fills in the generated fields and writes the full table schema. If ordinary fields are
+also omitted, `withWriteType` uses the underlying writer's partial-column behavior and generates
+no omitted columns. For Data Evolution partial updates, this preserves unselected column files.
 Flink's existing virtual computed columns retain their original semantics; this feature does not
 add Flink SQL syntax for physical generated columns.
 

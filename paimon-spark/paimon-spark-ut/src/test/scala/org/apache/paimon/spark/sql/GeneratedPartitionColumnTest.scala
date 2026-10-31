@@ -173,6 +173,21 @@ class GeneratedPartitionColumnTest extends PaimonSparkTestBase {
     }
   }
 
+  test("canonicalize quoted and escaped string literals in generation expressions") {
+    assume(gteqSpark3_5)
+    for (literal <- Seq("'NAME''s'", """'C:\\path'""", """'line\nend'""", """'quote\'end'""")) {
+      withTable("generated_events") {
+        sql(
+          s"""CREATE TABLE generated_events (name STRING,
+             |label STRING GENERATED ALWAYS AS (CONCAT(name, $literal))) USING paimon""".stripMargin)
+        sql("INSERT INTO generated_events (name) VALUES ('ab')")
+        checkAnswer(
+          sql("SELECT label FROM generated_events"),
+          Seq(sql(s"SELECT CONCAT('ab', $literal)").head()))
+      }
+    }
+  }
+
   test("use storage transforms and defaults for omitted generated values") {
     assume(gteqSpark3_5)
     withTable("generated_events") {
@@ -185,10 +200,11 @@ class GeneratedPartitionColumnTest extends PaimonSparkTestBase {
             |VALUES (1, CAST('1970-01-01 00:00:00' AS TIMESTAMP_NTZ), 'xabcx')""".stripMargin)
       sql("""INSERT INTO generated_events VALUES
             |(2, CAST('1970-01-01 00:00:00' AS TIMESTAMP_NTZ), 'xabcx',
-            |'1970-01-01 00:00:00.000000', 'abc', 'xabcxNAMEs')""".stripMargin)
+            |'1970-01-01 00:00:00.000000', 'abc', CONCAT('xabcx', 'NAME''s'))""".stripMargin)
+      val suffix = sql("SELECT 'NAME''s'").head().getString(0)
       checkAnswer(
         sql("SELECT text, trimmed, literal FROM generated_events"),
-        Seq.fill(2)(Row("1970-01-01 00:00:00.000000", "abc", "xabcxNAMEs")))
+        Seq.fill(2)(Row("1970-01-01 00:00:00.000000", "abc", "xabcx" + suffix)))
     }
     withTable("generated_events") {
       sql("""CREATE TABLE generated_events (id INT, name STRING DEFAULT 'abc',
@@ -301,7 +317,7 @@ class GeneratedPartitionColumnTest extends PaimonSparkTestBase {
     }
   }
 
-  test("preserve supplied values in complete row-tracking updates and reject partial DE updates") {
+  test("preserve supplied and untouched generated values in row-tracking and DE updates") {
     assume(gteqSpark3_5)
     for (dataEvolution <- Seq(false, true)) {
       withTable("generated_events") {
@@ -309,29 +325,19 @@ class GeneratedPartitionColumnTest extends PaimonSparkTestBase {
                |label STRING GENERATED ALWAYS AS (UPPER(name))) USING paimon
                |TBLPROPERTIES ('row-tracking.enabled'='true',
                |'data-evolution.enabled'='$dataEvolution')""".stripMargin)
-        sql("INSERT INTO generated_events (id, name) VALUES (1, 'old')")
-        if (!dataEvolution) {
-          sql("UPDATE generated_events SET name='new', label='NEW' WHERE id=1")
-          checkAnswer(sql("SELECT name, label FROM generated_events"), Seq(Row("new", "NEW")))
-          sql("UPDATE generated_events SET name='changed' WHERE id=1")
-          checkAnswer(sql("SELECT name, label FROM generated_events"), Seq(Row("changed", "NEW")))
-          sql("UPDATE generated_events SET id=id+1, name='bad', label='WRONG' WHERE id=1")
-          checkAnswer(
-            sql("SELECT id, name, label FROM generated_events"),
-            Seq(Row(2, "bad", "WRONG")))
-        } else {
-          val error = intercept[Throwable] {
-            sql("UPDATE generated_events SET id=id+1, name='bad', label='WRONG' WHERE id=1")
-          }
-          assert(
-            Iterator
-              .iterate(error)(_.getCause)
-              .takeWhile(_ != null)
-              .exists(e => Option(e.getMessage).exists(_.contains("Partial-column updates"))))
-          checkAnswer(
-            sql("SELECT id, name, label FROM generated_events"),
-            Seq(Row(1, "old", "OLD")))
-        }
+        sql("INSERT INTO generated_events (id, name) VALUES (1, 'old'), (2, 'other')")
+        sql("UPDATE generated_events SET name='new' WHERE id=1")
+        checkAnswer(
+          sql("SELECT id, name, label FROM generated_events"),
+          Seq(Row(1, "new", "OLD"), Row(2, "other", "OTHER")))
+        sql("UPDATE generated_events SET label='external' WHERE id=1")
+        checkAnswer(
+          sql("SELECT id, name, label FROM generated_events"),
+          Seq(Row(1, "new", "external"), Row(2, "other", "OTHER")))
+        sql("UPDATE generated_events SET name='changed', label=NULL WHERE id=1")
+        checkAnswer(
+          sql("SELECT id, name, label FROM generated_events"),
+          Seq(Row(1, "changed", null), Row(2, "other", "OTHER")))
       }
     }
   }

@@ -25,9 +25,9 @@ import org.apache.paimon.types.{ArrayType, BlobType, DataField, DataType => Paim
 import org.apache.paimon.utils.{GeneratedColumnRow, InternalRowUtils}
 
 import org.apache.spark.sql.catalyst.{InternalRow => CatalystRow}
-import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow}
+import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, LeafExpression, Literal, Unevaluable}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
-import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 
 import scala.collection.JavaConverters._
 
@@ -67,6 +67,21 @@ case class PaimonGeneratedColumn(
 }
 
 object PaimonGeneratedColumn {
+
+  /** Store SQL-standard string literals independently of Spark's version-specific SQL printer. */
+  def expressionSql(expression: Expression): String = {
+    expression.transformUp {
+      case literal: Literal if literal.dataType == StringType => SqlStringLiteral(literal)
+    }.sql
+  }
+
+  private case class SqlStringLiteral(literal: Literal) extends LeafExpression with Unevaluable {
+    override def dataType: DataType = literal.dataType
+    override def nullable: Boolean = literal.nullable
+    override def sql: String =
+      if (literal.value == null) "NULL" else "'" + literal.value.toString.replace("'", "''") + "'"
+  }
+
   def validateResultType(field: DataField): Unit = {
     def representable(dataType: PaimonType): Boolean = dataType match {
       case timestamp: TimestampType => timestamp.getPrecision <= 6

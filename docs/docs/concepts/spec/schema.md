@@ -159,9 +159,14 @@ column does not recompute a generated column that is already supplied in the wri
 
 Definitions are supported at table creation. Changing a definition or renaming, dropping, or
 changing the type of any source is not supported. A generated column cannot be used as
-`rowkind.field`. Primary-key tables require the deduplicate merge
-engine. Partial-column writes, including Data Evolution partial updates, are not supported for
-tables with generated columns.
+`rowkind.field`.
+
+All primary-key merge engines are supported. Column filling happens before merging; the merge
+engine applies its normal rules to generated columns without recomputing expressions after a merge.
+For example, a partial-update merge can retain an existing generated value when its source changes.
+Data Evolution partial-column updates write only the selected columns. Unselected generated
+columns keep their existing values, and selected generated columns accept the supplied values
+without requiring their expression's source columns.
 
 Use clients supporting this attribute for writes; older clients may ignore it. Its presence does
 not establish compatibility with older writers. See [Spark DDL](../../spark/sql-ddl#generated-columns)

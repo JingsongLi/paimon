@@ -42,10 +42,11 @@ public interface TableWrite extends AutoCloseable {
     TableWrite withIOManager(IOManager ioManager);
 
     /**
-     * Specifies the write row type. For tables with generated columns, this declares the input
-     * layout: only generated columns may be omitted, and the writer materializes the full table row
-     * before routing and writing. Supplied generated values, including nulls, are preserved without
-     * evaluating or checking the generation expression.
+     * Specifies the write row type. If all ordinary columns are supplied, omitted generated columns
+     * are materialized before routing and writing. Otherwise, the underlying writer's
+     * partial-column write behavior applies, without generating omitted columns. Supplied generated
+     * values, including nulls, are preserved without evaluating or checking the generation
+     * expression.
      */
     TableWrite withWriteType(RowType writeType);
 

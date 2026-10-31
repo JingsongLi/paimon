@@ -142,7 +142,12 @@ public class TableWriteImpl<T> implements InnerTableWrite, Restorable<List<State
 
     @Override
     public TableWriteImpl<T> withWriteType(RowType writeType) {
-        if (generatedColumnRow != null) {
+        if (GeneratedColumnRow.hasGeneratedColumns(rowType)
+                && rowType.getFields().stream()
+                        .allMatch(
+                                field ->
+                                        field.generationExpression() != null
+                                                || writeType.containsField(field.name()))) {
             List<DataField> physicalFields = new ArrayList<>(rowType.getFields());
             for (DataField special :
                     Arrays.asList(SpecialFields.ROW_ID, SpecialFields.SEQUENCE_NUMBER)) {
@@ -170,6 +175,7 @@ public class TableWriteImpl<T> implements InnerTableWrite, Restorable<List<State
         this.writeType = writeType;
         updateNotNullFieldIndexes();
         this.defaultValueRow = DefaultValueRow.create(writeType, rowType);
+        this.generatedColumnRow = null;
         return this;
     }
 

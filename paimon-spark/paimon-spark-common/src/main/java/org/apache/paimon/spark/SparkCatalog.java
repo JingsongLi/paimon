@@ -36,6 +36,7 @@ import org.apache.paimon.spark.catalog.SupportV1Function;
 import org.apache.paimon.spark.catalog.SupportView;
 import org.apache.paimon.spark.catalog.functions.FunctionIdentifierConverter;
 import org.apache.paimon.spark.catalog.functions.PaimonFunctions;
+import org.apache.paimon.spark.catalyst.analysis.PaimonGeneratedColumn;
 import org.apache.paimon.spark.utils.CatalogUtils;
 import org.apache.paimon.table.FormatTable;
 import org.apache.paimon.table.iceberg.IcebergTable;
@@ -758,11 +759,11 @@ public class SparkCatalog extends SparkBaseCatalog
             if (generationExpression != null) {
                 try {
                     generationExpression =
-                            SparkSession.active()
-                                    .sessionState()
-                                    .sqlParser()
-                                    .parseExpression(generationExpression)
-                                    .sql();
+                            PaimonGeneratedColumn.expressionSql(
+                                    SparkSession.active()
+                                            .sessionState()
+                                            .sqlParser()
+                                            .parseExpression(generationExpression));
                 } catch (ParseException e) {
                     throw new IllegalArgumentException(
                             "Invalid generation expression: " + generationExpression, e);

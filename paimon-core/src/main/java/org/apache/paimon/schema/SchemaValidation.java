@@ -1675,10 +1675,6 @@ public class SchemaValidation {
                     "Generated column '%s' cannot be used as rowkind.field.",
                     field.name());
             GeneratedColumn.create(rowType, field);
-            checkArgument(
-                    schema.primaryKeys().isEmpty()
-                            || options.mergeEngine() == CoreOptions.MergeEngine.DEDUPLICATE,
-                    "Generated columns only support the deduplicate merge engine.");
         }
     }
 
