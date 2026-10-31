@@ -37,6 +37,7 @@ import org.apache.paimon.index.pkvector.PrimaryKeyVectorBucketSearch;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.KeyValueFileReaderFactory;
 import org.apache.paimon.options.Options;
+import org.apache.paimon.options.VectorIndexOptions;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.predicate.PredicateVisitor;
 import org.apache.paimon.reader.RecordReader;
@@ -136,12 +137,14 @@ public class PrimaryKeyVectorRead implements VectorRead, Serializable {
         this.table = table;
         this.vectorField = vectorField;
         this.indexType = table.coreOptions().primaryKeyVectorIndexType(vectorField.name());
-        this.indexOptions = table.coreOptions().primaryKeyVectorIndexOptions(vectorField.name());
+        this.indexOptions =
+                VectorIndexOptions.resolve(
+                        table.coreOptions().toConfiguration(), indexType, vectorField.name());
         this.searchOptions = Collections.unmodifiableMap(new HashMap<>(searchOptions));
         this.query = query.clone();
         this.limit = limit;
         this.metric =
-                normalize(table.coreOptions().primaryKeyVectorDistanceMetric(vectorField.name()));
+                normalize(VectorIndexOptions.metric(indexOptions, indexType, vectorField.name()));
         this.refineFactor =
                 VectorSearchRefineOptions.resolve(
                         this.searchOptions,

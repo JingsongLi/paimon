@@ -38,6 +38,7 @@ import org.apache.paimon.index.GlobalIndexMeta;
 import org.apache.paimon.index.IndexFileMeta;
 import org.apache.paimon.index.IndexPathFactory;
 import org.apache.paimon.options.Options;
+import org.apache.paimon.options.VectorIndexOptions;
 import org.apache.paimon.partition.PartitionPredicate;
 import org.apache.paimon.predicate.BatchVectorSearch;
 import org.apache.paimon.predicate.Predicate;
@@ -787,8 +788,8 @@ public abstract class AbstractDataEvolutionVectorRead implements Serializable {
                 type = "vector";
             }
             String configuredMetric =
-                    configured
-                            .globalIndexOptions(type, vectorColumn.name(), false)
+                    VectorIndexOptions.resolve(
+                                    configured.toConfiguration(), type, vectorColumn.name(), false)
                             .get(type + ".metric");
             if (configuredMetric != null) {
                 return configuredMetric;
@@ -841,11 +842,11 @@ public abstract class AbstractDataEvolutionVectorRead implements Serializable {
 
     protected int configuredRefineFactor(String indexType) {
         Options resolved =
-                new CoreOptions(
-                                new Options(
-                                        table == null ? Collections.emptyMap() : table.options(),
-                                        options))
-                        .globalIndexOptions(indexType, vectorColumn.name());
+                VectorIndexOptions.resolve(
+                        new Options(
+                                table == null ? Collections.emptyMap() : table.options(), options),
+                        indexType,
+                        vectorColumn.name());
         return VectorSearchRefineOptions.resolve(
                 options, resolved.toMap(), vectorColumn.name(), indexType);
     }

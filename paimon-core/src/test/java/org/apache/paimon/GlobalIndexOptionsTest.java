@@ -24,6 +24,7 @@ import org.apache.paimon.globalindex.VectorGlobalIndexer;
 import org.apache.paimon.index.pk.PrimaryKeyIndexDefinition;
 import org.apache.paimon.index.pk.PrimaryKeyIndexDefinitions;
 import org.apache.paimon.options.Options;
+import org.apache.paimon.options.VectorIndexOptions;
 import org.apache.paimon.schema.SchemaValidation;
 import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.types.DataField;
@@ -45,6 +46,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Configuration contracts shared by primary-key and Data Evolution indexes. */
 class GlobalIndexOptionsTest {
+
+    @Test
+    void testGenericMergeDoesNotInterpretVectorParameters() {
+        Map<String, String> values = new HashMap<>();
+        values.put("fields.embedding.index-options", "{\"metric\":\"INNER-PRODUCT\",\"nlist\":64}");
+        Options resolved = new CoreOptions(values).globalIndexOptions("ivf-pq", "embedding");
+        assertThat(resolved.get("ivf-pq.metric")).isEqualTo("INNER-PRODUCT");
+        assertThat(resolved.get("ivf-pq.distance.metric")).isNull();
+        assertThat(
+                        new CoreOptions(Collections.emptyMap())
+                                .globalIndexOptions("ivf-pq", "embedding")
+                                .get("ivf-pq.metric"))
+                .isNull();
+    }
 
     @ParameterizedTest
     @CsvSource({
@@ -126,8 +141,8 @@ class GlobalIndexOptionsTest {
                 PrimaryKeyIndexDefinitions.create(schema).definitions().get(0);
 
         assertThat(
-                        new CoreOptions(definition.options())
-                                .globalIndexOptions(definition.indexType(), "embedding")
+                        VectorIndexOptions.resolve(
+                                        definition.options(), definition.indexType(), "embedding")
                                 .toMap())
                 .isEqualTo(definition.options().toMap());
         assertThat(
@@ -176,7 +191,10 @@ class GlobalIndexOptionsTest {
                 new CoreOptions(
                         Collections.singletonMap(
                                 "fields.embedding.index-options", "{\"nlist\":64}"));
-        assertThat(options.globalIndexOptions("ivf-pq", "embedding", false).get("ivf-pq.metric"))
+        assertThat(
+                        VectorIndexOptions.resolve(
+                                        options.toConfiguration(), "ivf-pq", "embedding", false)
+                                .get("ivf-pq.metric"))
                 .isNull();
     }
 

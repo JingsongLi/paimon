@@ -23,6 +23,7 @@ import org.apache.paimon.globalindex.bitmap.BitmapGlobalIndexerFactory;
 import org.apache.paimon.globalindex.bitmap.MultiValueGlobalIndexerFactory;
 import org.apache.paimon.globalindex.btree.BTreeGlobalIndexerFactory;
 import org.apache.paimon.globalindex.fmindex.FMGlobalIndexerFactory;
+import org.apache.paimon.options.VectorIndexOptions;
 import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.types.DataField;
 
@@ -98,7 +99,10 @@ public class PrimaryKeyIndexDefinitions {
                                 column,
                                 field.id(),
                                 options.primaryKeyVectorIndexType(column),
-                                options.primaryKeyVectorIndexOptions(column),
+                                VectorIndexOptions.resolve(
+                                        options.toConfiguration(),
+                                        options.primaryKeyVectorIndexType(column),
+                                        column),
                                 PrimaryKeyIndexDefinition.Family.VECTOR));
             } else if (fullTextColumns.contains(column)) {
                 definitions.add(

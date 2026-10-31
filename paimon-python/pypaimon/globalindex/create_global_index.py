@@ -21,6 +21,7 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from pypaimon.common.options.core_options import CoreOptions
 from pypaimon.common.options.options import Options
+from pypaimon.common.options.vector_index_options import VectorIndexOptions
 from pypaimon.common.predicate import Predicate
 from pypaimon.common.predicate_builder import PredicateBuilder
 from pypaimon.globalindex.index_types import BTREE_IDENTIFIER, BITMAP_IDENTIFIER
@@ -110,8 +111,9 @@ class GlobalIndexBuilder:
                 "Python global index build currently supports one column, got %s."
                 % self._index_columns
             )
-        self._options = self._core_options.global_index_options(
-            self._index_type, self._index_columns[0])
+        self._options = (VectorIndexOptions.resolve(self._options, self._index_type, self._index_columns[0])
+                         if CoreOptions._is_vector_index_type(self._index_type) else
+                         self._core_options.global_index_options(self._index_type, self._index_columns[0]))
         self._core_options = CoreOptions(self._options)
         if not self._table.options.row_tracking_enabled():
             raise ValueError(

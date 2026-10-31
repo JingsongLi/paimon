@@ -22,6 +22,7 @@ from collections.abc import Mapping
 
 from pypaimon.common.options.core_options import CoreOptions
 from pypaimon.common.options.options import Options
+from pypaimon.common.options.vector_index_options import VectorIndexOptions
 
 
 def native_index_options(schema):
@@ -69,14 +70,15 @@ def _resolve(schema):
             result['pk-%s.index.columns' % family] = ','.join(native_columns[family])
         for column in columns:
             known_columns.add(column)
-            resolved = core.global_index_options(kind, column, default_metric=False).to_map()
+            resolved = (VectorIndexOptions.resolve(core.options, kind, column, default_metric=False).to_map()
+                        if vector else core.global_index_options(kind, column).to_map())
             profile = {key: value for key, value in resolved.items()
                        if key.startswith(prefix) and value is not None}
             field_prefix = 'fields.%s.' % column
             if primary_key:
                 if vector:
                     result[field_prefix + 'pk-vector.index.type'] = kind
-                    result[field_prefix + 'pk-vector.distance.metric'] = core.primary_key_vector_distance_metric(column)
+                    result[field_prefix + 'pk-vector.distance.metric'] = VectorIndexOptions.metric(core.options, kind, column)
                     profile.update({key: value for key, value in resolved.items()
                                     if key.startswith(field_prefix) and not key.startswith(field_prefix + 'pk-')
                                     and key != field_prefix + 'index-options' and value is not None})

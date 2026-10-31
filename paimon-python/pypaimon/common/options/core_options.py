@@ -1906,7 +1906,7 @@ class CoreOptions:
     def _index_columns(columns) -> List[str]:
         return [] if columns is None else [column.strip() for column in str(columns).split(',')]
 
-    def global_index_options(self, index_type: Optional[str], column: str, *, default_metric=True) -> Options:
+    def global_index_options(self, index_type: Optional[str], column: str) -> Options:
         """Resolve the same implementation and field options for either table mode."""
         values = dict(self.options.to_map())
         if index_type is None:
@@ -1920,14 +1920,6 @@ class CoreOptions:
         shared = values.get(shared_key) is not None
         option_key = shared_key if shared else field_prefix + "pk-" + (
             "vector" if vector else index_type) + ".index.options"
-        metric = None
-        if vector:
-            for key in (field_prefix + "distance.metric", field_prefix + "metric",
-                        field_prefix + "pk-vector.distance.metric", prefix + "distance.metric",
-                        prefix + "metric", "distance.metric", "metric"):
-                if values.get(key) is not None:
-                    metric = values[key]
-                    break
         serialized = values.get(option_key)
         if serialized is not None and str(serialized).strip():
             try:
@@ -1944,27 +1936,14 @@ class CoreOptions:
                 elif index_type == 'full-text' and isinstance(value, list):
                     value = ';'.join(str(item) for item in value)
                 qualified = key if key.startswith((prefix, "fields.")) else prefix + key
-                metric_option = vector and qualified in (
-                    prefix + "metric", prefix + "distance.metric",
-                    field_prefix + "metric", field_prefix + "distance.metric")
                 previous = values.get(qualified)
-                if metric_option:
-                    value = str(value).lower().replace('-', '_')
-                    previous = None if previous is None else str(previous).lower().replace('-', '_')
                 if not shared and previous is not None and previous != str(value):
                     raise ValueError("%s defines conflicting values for %s." % (option_key, qualified))
                 values[qualified] = str(value)
-                if metric_option:
-                    metric = value
-                elif vector and qualified.startswith(prefix):
+                if vector and qualified.startswith(prefix):
                     short_key = qualified[len(prefix):]
                     if shared:
                         values[field_prefix + short_key] = str(value)
-        if vector and (metric is not None or default_metric):
-            metric = str(metric or "inner_product").lower().replace('-', '_')
-            for key in (prefix + "metric", prefix + "distance.metric",
-                        field_prefix + "metric", field_prefix + "distance.metric"):
-                values[key] = metric
         return Options(values)
 
     def primary_key_vector_index_type(self, column: str):
@@ -1983,18 +1962,16 @@ class CoreOptions:
         return None
 
     def primary_key_vector_index_options(self, column: str) -> Options:
+        from pypaimon.common.options.vector_index_options import VectorIndexOptions
         index_type = self.primary_key_vector_index_type(column)
         if index_type is None or not str(index_type).strip():
             raise ValueError("fields.%s.pk-vector.index.type must be configured before "
                              "resolving index options." % column)
-        return self.global_index_options(str(index_type), column)
+        return VectorIndexOptions.resolve(self.options, str(index_type), column)
 
     def primary_key_vector_distance_metric(self, column: str) -> str:
-        index_type = self.primary_key_vector_index_type(column)
-        value = (self.global_index_options(index_type, column).to_map()[index_type + ".metric"]
-                 if index_type else self.options.to_map().get(
-                     "fields.%s.pk-vector.distance.metric" % column, "inner_product"))
-        return str(value).lower().replace('-', '_')
+        from pypaimon.common.options.vector_index_options import VectorIndexOptions
+        return VectorIndexOptions.metric(self.options, self.primary_key_vector_index_type(column), column)
 
     def primary_key_full_text_index_options(self, column: str) -> Options:
         return Options({key: value for key, value in self.global_index_options(

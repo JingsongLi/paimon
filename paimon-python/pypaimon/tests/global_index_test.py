@@ -25,6 +25,7 @@ import pytest
 from pypaimon import CatalogFactory, Schema
 from pypaimon.common.options.core_options import CoreOptions, GlobalIndexSearchMode
 from pypaimon.common.options.options import Options
+from pypaimon.common.options.vector_index_options import VectorIndexOptions
 from pypaimon.common.predicate import Predicate
 from pypaimon.common.predicate_builder import PredicateBuilder
 from pypaimon.globalindex.global_index_meta import GlobalIndexMeta
@@ -45,6 +46,14 @@ from pypaimon.utils.range import Range
 
 class GlobalIndexTest(unittest.TestCase):
 
+    def test_generic_merge_does_not_interpret_vector_parameters(self):
+        values = {'fields.embedding.index-options': '{"metric":"INNER-PRODUCT","nlist":64}'}
+        resolved = CoreOptions(Options(values)).global_index_options('ivf-pq', 'embedding').to_map()
+        self.assertEqual('INNER-PRODUCT', resolved['ivf-pq.metric'])
+        self.assertNotIn('ivf-pq.distance.metric', resolved)
+        self.assertNotIn('ivf-pq.metric', CoreOptions(Options({})).global_index_options(
+            'ivf-pq', 'embedding').to_map())
+
     def test_legacy_primary_key_metric_resolution_is_idempotent(self):
         for metric in ('COSINE', 'inner-product', 'L2'):
             with self.subTest(metric=metric):
@@ -53,7 +62,7 @@ class GlobalIndexTest(unittest.TestCase):
                           'fields.embedding.pk-vector.distance.metric': metric.lower().replace('-', '_'),
                           'fields.embedding.pk-vector.index.options': '{"metric":"%s"}' % metric}
                 first = CoreOptions(Options(values)).primary_key_vector_index_options('embedding')
-                second = CoreOptions(first).global_index_options('ivf-pq', 'embedding')
+                second = VectorIndexOptions.resolve(first, 'ivf-pq', 'embedding')
                 self.assertEqual(first.to_map(), second.to_map())
                 self.assertEqual('{"metric":"%s"}' % metric,
                                  values['fields.embedding.pk-vector.index.options'])

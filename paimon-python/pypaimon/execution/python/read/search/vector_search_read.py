@@ -27,6 +27,7 @@ from threading import Lock
 
 from pypaimon.common.options.core_options import CoreOptions
 from pypaimon.common.options.options import Options
+from pypaimon.common.options.vector_index_options import VectorIndexOptions
 from pypaimon.globalindex.batch_vector_search import BatchVectorSearch
 from pypaimon.globalindex.global_index_meta import GlobalIndexIOMeta
 from pypaimon.globalindex.global_index_result import GlobalIndexResult
@@ -658,7 +659,7 @@ class AbstractVectorSearchReadImpl:
     def _resolved_index_options(self, index_type):
         values = dict(_table_options_map(self._table))
         values.update(self._options)
-        return CoreOptions(Options(values)).global_index_options(index_type, self._vector_column.name).to_map()
+        return VectorIndexOptions.resolve(Options(values), index_type, self._vector_column.name).to_map()
 
     def _configured_refine_factor(self, index_type):
         value = _configured_refine_factor(
@@ -994,7 +995,8 @@ def _configured_vector_metric(options, vector_column, index_type=None):
     if field_prefix + "index-options" in options:
         core = CoreOptions(Options(options))
         selected_type = index_type or core.primary_key_vector_index_type(vector_column.name) or "vector"
-        metric = core.global_index_options(selected_type, vector_column.name, default_metric=False).to_map().get(selected_type + ".metric")
+        metric = VectorIndexOptions.resolve(Options(options), selected_type, vector_column.name,
+                                            default_metric=False).to_map().get(selected_type + ".metric")
         if metric is not None:
             return metric
     index_prefix = "%s." % index_type if index_type else None

@@ -41,6 +41,7 @@ import org.apache.paimon.mergetree.compact.aggregate.factory.FieldAggregatorFact
 import org.apache.paimon.mergetree.compact.aggregate.factory.FieldLastValueAggFactory;
 import org.apache.paimon.options.ConfigOption;
 import org.apache.paimon.options.Options;
+import org.apache.paimon.options.VectorIndexOptions;
 import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.types.ArrayType;
 import org.apache.paimon.types.BigIntType;
@@ -1242,7 +1243,11 @@ public class SchemaValidation {
                         "%s entry '%s' must reference an existing column.",
                         optionKey,
                         column);
-                options.globalIndexOptions(type, column);
+                if (CoreOptions.isVectorIndexType(type)) {
+                    VectorIndexOptions.resolve(options.toConfiguration(), type, column);
+                } else {
+                    options.globalIndexOptions(type, column);
+                }
             }
         }
         if (options.dataEvolutionEnabled()) {
@@ -1300,7 +1305,7 @@ public class SchemaValidation {
         checkArgument(
                 !options.pkClusteringOverride(),
                 "Primary-key vector index does not support pk-clustering-override.");
-        options.primaryKeyVectorIndexOptions(indexColumn);
+        VectorIndexOptions.resolve(options.toConfiguration(), indexType, indexColumn);
 
         DataField vectorField =
                 schema.fields().stream()
@@ -1320,10 +1325,12 @@ public class SchemaValidation {
                 indexColumn);
         checkArgument(
                 Arrays.asList("l2", "cosine", "inner_product")
-                        .contains(options.primaryKeyVectorDistanceMetric(indexColumn)),
+                        .contains(
+                                VectorIndexOptions.metric(
+                                        options.toConfiguration(), indexType, indexColumn)),
                 "fields.%s.pk-vector.distance.metric must be one of l2, cosine, inner_product, but is %s.",
                 indexColumn,
-                options.primaryKeyVectorDistanceMetric(indexColumn));
+                VectorIndexOptions.metric(options.toConfiguration(), indexType, indexColumn));
     }
 
     private static void validatePrimaryKeyFullTextIndex(TableSchema schema, CoreOptions options) {

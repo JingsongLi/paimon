@@ -30,6 +30,7 @@ import org.apache.paimon.options.ConfigOptions;
 import org.apache.paimon.options.ExpireConfig;
 import org.apache.paimon.options.MemorySize;
 import org.apache.paimon.options.Options;
+import org.apache.paimon.options.VectorIndexOptions;
 import org.apache.paimon.options.description.DescribedEnum;
 import org.apache.paimon.options.description.Description;
 import org.apache.paimon.options.description.InlineElement;
@@ -5148,7 +5149,7 @@ public class CoreOptions implements Serializable {
                 .collect(Collectors.toList());
     }
 
-    private static boolean isVectorIndexType(String type) {
+    public static boolean isVectorIndexType(String type) {
         return !Arrays.asList("btree", "bitmap", "multivalue", "full-text", "fm").contains(type);
     }
 
@@ -5215,11 +5216,6 @@ public class CoreOptions implements Serializable {
      * qualified with the implementation's existing option prefix.
      */
     public Options globalIndexOptions(@Nullable String type, String column) {
-        return globalIndexOptions(type, column, true);
-    }
-
-    /** The same resolver, optionally retaining the absence of an explicitly configured metric. */
-    public Options globalIndexOptions(@Nullable String type, String column, boolean defaultMetric) {
         Options resolved = new Options(options.toMap(), options);
         if (type == null) {
             type = vectorIndexType(column);
@@ -5236,24 +5232,6 @@ public class CoreOptions implements Serializable {
                 shared
                         ? sharedKey
                         : fieldPrefix + "pk-" + (vector ? "vector" : type) + ".index.options";
-        String metric = null;
-        if (vector) {
-            for (String key :
-                    Arrays.asList(
-                            fieldPrefix + "distance.metric",
-                            fieldPrefix + "metric",
-                            fieldPrefix + "pk-vector.distance.metric",
-                            prefix + "distance.metric",
-                            prefix + "metric",
-                            "distance.metric",
-                            "metric")) {
-                if (options.get(key) != null) {
-                    metric = options.get(key);
-                    break;
-                }
-            }
-        }
-
         String serialized = options.get(optionKey);
         if (serialized != null && !serialized.trim().isEmpty()) {
             for (Map.Entry<String, String> entry :
@@ -5268,26 +5246,14 @@ public class CoreOptions implements Serializable {
                         value != null, "%s value for key %s must not be null.", optionKey, key);
                 String qualified =
                         key.startsWith(prefix) || key.startsWith("fields.") ? key : prefix + key;
-                boolean metricOption =
-                        vector
-                                && (qualified.equals(prefix + "metric")
-                                        || qualified.equals(prefix + "distance.metric")
-                                        || qualified.equals(fieldPrefix + "metric")
-                                        || qualified.equals(fieldPrefix + "distance.metric"));
                 String previous = resolved.get(qualified);
-                if (metricOption) {
-                    value = normalizeVectorMetric(value);
-                    previous = previous == null ? null : normalizeVectorMetric(previous);
-                }
                 checkArgument(
                         shared || previous == null || previous.equals(value),
                         "%s defines conflicting values for %s.",
                         optionKey,
                         qualified);
                 resolved.setString(qualified, value);
-                if (metricOption) {
-                    metric = value;
-                } else if (vector && qualified.startsWith(prefix)) {
+                if (vector && qualified.startsWith(prefix)) {
                     String shortKey = qualified.substring(prefix.length());
                     if (shared) {
                         // Native vector implementations also accept the flat field syntax.
@@ -5295,14 +5261,6 @@ public class CoreOptions implements Serializable {
                     }
                 }
             }
-        }
-        if (vector && (metric != null || defaultMetric)) {
-            metric = normalizeVectorMetric(metric);
-            // Keep both accepted aliases consistent for implementations using either spelling.
-            resolved.setString(prefix + "metric", metric);
-            resolved.setString(prefix + "distance.metric", metric);
-            resolved.setString(fieldPrefix + "metric", metric);
-            resolved.setString(fieldPrefix + "distance.metric", metric);
         }
         return resolved;
     }
@@ -5419,27 +5377,19 @@ public class CoreOptions implements Serializable {
         return null;
     }
 
+    /** Compatibility delegate to the vector resolver shared by both table modes. */
     public Options primaryKeyVectorIndexOptions(String column) {
         String type = primaryKeyVectorIndexType(column);
         checkArgument(
                 type != null && !type.trim().isEmpty(),
                 "fields.%s.pk-vector.index.type must be configured before resolving index options.",
                 column);
-        return globalIndexOptions(type, column);
+        return VectorIndexOptions.resolve(options, type, column);
     }
 
+    /** Compatibility delegate to the vector resolver shared by both table modes. */
     public String primaryKeyVectorDistanceMetric(String column) {
-        String type = primaryKeyVectorIndexType(column);
-        return type == null
-                ? normalizeVectorMetric(
-                        options.get("fields." + column + ".pk-vector.distance.metric"))
-                : globalIndexOptions(type, column).get(type + ".metric");
-    }
-
-    private static String normalizeVectorMetric(String metric) {
-        return (metric == null ? "inner_product" : metric)
-                .toLowerCase(Locale.ROOT)
-                .replace('-', '_');
+        return VectorIndexOptions.metric(options, primaryKeyVectorIndexType(column), column);
     }
 
     /** Specifies the merge engine for table with primary key. */
